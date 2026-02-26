@@ -1,0 +1,111 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-analyzer",
+      "type": "shell",
+      "command": "cmake --build . -j$(sysctl -n hw.ncpu)",
+      "options": {
+        "cwd": "${workspaceFolder}/analyzer/build"
+      },
+      "group": "build",
+      "problemMatcher": ["$gcc"],
+      "detail": "编译 C++ code-sage 分析器"
+    },
+    {
+      "label": "cmake-configure",
+      "type": "shell",
+      "command": "mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug",
+      "options": {
+        "cwd": "${workspaceFolder}/analyzer"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "CMake 配置（Debug 模式）"
+    },
+    {
+      "label": "build-backend",
+      "type": "shell",
+      "command": "npx tsc",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "build",
+      "problemMatcher": ["$tsc"],
+      "detail": "编译后端 TypeScript"
+    },
+    {
+      "label": "build-extension",
+      "type": "shell",
+      "command": "npx tsc -p ./",
+      "options": {
+        "cwd": "${workspaceFolder}/extension"
+      },
+      "group": "build",
+      "problemMatcher": ["$tsc"],
+      "detail": "编译 VSCode 扩展 TypeScript"
+    },
+    {
+      "label": "watch-extension",
+      "type": "shell",
+      "command": "npx tsc -watch -p ./",
+      "options": {
+        "cwd": "${workspaceFolder}/extension"
+      },
+      "isBackground": true,
+      "problemMatcher": ["$tsc-watch"],
+      "group": "build",
+      "detail": "监听模式编译 VSCode 扩展"
+    },
+    {
+      "label": "build-webview",
+      "type": "shell",
+      "command": "npx vite build",
+      "options": {
+        "cwd": "${workspaceFolder}/extension/webview"
+      },
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "构建 React Webview 前端"
+    },
+    {
+      "label": "dev-webview",
+      "type": "shell",
+      "command": "npx vite",
+      "options": {
+        "cwd": "${workspaceFolder}/extension/webview"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Webview 开发服务器"
+    },
+    {
+      "label": "run-cpp-tests",
+      "type": "shell",
+      "command": "ctest --output-on-failure",
+      "options": {
+        "cwd": "${workspaceFolder}/analyzer/build"
+      },
+      "group": "test",
+      "problemMatcher": [],
+      "detail": "运行全部 C++ 单元测试",
+      "dependsOn": "build-analyzer"
+    },
+    {
+      "label": "build-all",
+      "dependsOn": [
+        "build-analyzer",
+        "build-backend",
+        "build-extension",
+        "build-webview"
+      ],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "detail": "并行编译所有组件"
+    }
+  ]
+}
