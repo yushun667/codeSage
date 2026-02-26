@@ -1,192 +1,76 @@
 {
   "version": "0.2.0",
   "configurations": [
-    // ───────── C++ 分析器调试 ─────────
     {
-      "name": "C++ Analyzer: parse",
-      "type": "lldb",
+      "name": "运行扩展 (Extension Host)",
+      "type": "extensionHost",
       "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/code-sage",
       "args": [
-        "parse",
-        "--compile-db=${input:compileDbPath}",
-        "--db=${input:dbPath}",
-        "--project-root=${input:projectRoot}"
+        "--extensionDevelopmentPath=${workspaceFolder}/extension"
       ],
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
+      "outFiles": [
+        "${workspaceFolder}/extension/dist/**/*.js"
+      ],
+      "sourceMaps": true,
+      "preLaunchTask": "build-all",
+      "env": {
+        "CODESAGE_ANALYZER_PATH": "${workspaceFolder}/analyzer/build/code-sage"
+      }
     },
     {
-      "name": "C++ Analyzer: query callgraph-forward",
-      "type": "lldb",
+      "name": "运行扩展 (无预编译)",
+      "type": "extensionHost",
       "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/code-sage",
       "args": [
-        "query",
-        "callgraph-forward",
-        "--db=${input:dbPath}",
-        "--usr=${input:functionUsr}",
-        "--depth=3"
+        "--extensionDevelopmentPath=${workspaceFolder}/extension"
       ],
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
-    },
-    {
-      "name": "C++ Analyzer: query search-functions",
-      "type": "lldb",
-      "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/code-sage",
-      "args": [
-        "query",
-        "search-functions",
-        "--db=${input:dbPath}",
-        "--query=${input:searchQuery}"
+      "outFiles": [
+        "${workspaceFolder}/extension/dist/**/*.js"
       ],
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
+      "sourceMaps": true,
+      "env": {
+        "CODESAGE_ANALYZER_PATH": "${workspaceFolder}/analyzer/build/code-sage"
+      }
     },
     {
-      "name": "C++ Analyzer: query dataflow",
-      "type": "lldb",
-      "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/code-sage",
-      "args": [
-        "query",
-        "dataflow",
-        "--db=${input:dbPath}",
-        "--var-usr=${input:variableUsr}"
-      ],
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
-    },
-    {
-      "name": "C++ Tests: test_storage",
-      "type": "lldb",
-      "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/test_storage",
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
-    },
-    {
-      "name": "C++ Tests: test_query",
-      "type": "lldb",
-      "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/test_query",
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
-    },
-    {
-      "name": "C++ Tests: test_analyzer",
-      "type": "lldb",
-      "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/test_analyzer",
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
-    },
-    {
-      "name": "C++ Tests: test_dataflow",
-      "type": "lldb",
-      "request": "launch",
-      "program": "${workspaceFolder}/analyzer/build/test_dataflow",
-      "cwd": "${workspaceFolder}",
-      "preLaunchTask": "build-analyzer"
-    },
-
-    // ───────── Node.js 后端调试 ─────────
-    {
-      "name": "Backend: 启动服务",
+      "name": "调试后端服务",
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/backend/dist/index.js",
-      "cwd": "${workspaceFolder}/backend",
+      "outFiles": [
+        "${workspaceFolder}/backend/dist/**/*.js"
+      ],
       "sourceMaps": true,
-      "outFiles": ["${workspaceFolder}/backend/dist/**/*.js"],
+      "cwd": "${workspaceFolder}/backend",
       "env": {
-        "CODESAGE_PORT": "9527",
         "CODESAGE_ANALYZER_PATH": "${workspaceFolder}/analyzer/build/code-sage",
-        "CODESAGE_DB_PATH": "${input:dbPath}",
-        "CODESAGE_COMPILE_DB_PATH": "${input:compileDbPath}",
-        "CODESAGE_PROJECT_ROOT": "${input:projectRoot}"
+        "CODESAGE_DB_PATH": "${workspaceFolder}/.codesage_db",
+        "CODESAGE_PORT": "9527"
       },
-      "preLaunchTask": "build-backend",
-      "console": "integratedTerminal"
+      "preLaunchTask": "build-backend"
     },
-
-    // ───────── VSCode 扩展调试 ─────────
     {
-      "name": "Extension: 运行扩展",
+      "name": "扩展测试",
       "type": "extensionHost",
       "request": "launch",
-      "runtimeExecutable": "${execPath}",
       "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}/extension"
+        "--extensionDevelopmentPath=${workspaceFolder}/extension",
+        "--extensionTestsPath=${workspaceFolder}/extension/dist/test"
       ],
       "outFiles": [
         "${workspaceFolder}/extension/dist/**/*.js"
       ],
       "sourceMaps": true,
       "preLaunchTask": "build-extension"
-    },
-    {
-      "name": "Extension: 运行扩展 (watch 模式)",
-      "type": "extensionHost",
-      "request": "launch",
-      "runtimeExecutable": "${execPath}",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}/extension"
-      ],
-      "outFiles": [
-        "${workspaceFolder}/extension/dist/**/*.js"
-      ],
-      "sourceMaps": true,
-      "preLaunchTask": "watch-extension"
     }
   ],
-
   "compounds": [
     {
-      "name": "Full Stack: 后端 + 扩展",
-      "configurations": ["Backend: 启动服务", "Extension: 运行扩展"],
-      "stopAll": true
-    }
-  ],
-
-  "inputs": [
-    {
-      "id": "compileDbPath",
-      "type": "promptString",
-      "description": "compile_commands.json 的完整路径",
-      "default": "${workspaceFolder}/compile_commands.json"
-    },
-    {
-      "id": "dbPath",
-      "type": "promptString",
-      "description": "RocksDB 数据库路径",
-      "default": "${workspaceFolder}/.codesage_db"
-    },
-    {
-      "id": "projectRoot",
-      "type": "promptString",
-      "description": "要分析的项目根目录",
-      "default": "${workspaceFolder}"
-    },
-    {
-      "id": "functionUsr",
-      "type": "promptString",
-      "description": "函数 USR (如 c:@F@main)",
-      "default": "c:@F@main"
-    },
-    {
-      "id": "variableUsr",
-      "type": "promptString",
-      "description": "全局变量 USR (如 c:@global_counter)",
-      "default": ""
-    },
-    {
-      "id": "searchQuery",
-      "type": "promptString",
-      "description": "搜索关键字",
-      "default": ""
+      "name": "扩展 + 后端 (全栈调试)",
+      "configurations": [
+        "运行扩展 (Extension Host)",
+        "调试后端服务"
+      ]
     }
   ]
 }
