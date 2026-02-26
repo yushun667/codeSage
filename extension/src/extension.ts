@@ -69,17 +69,27 @@ export async function activate(context: vscode.ExtensionContext) {
       parseStatusBarItem.command = 'codeSage.cancelParse';
       parseStatusBarItem.tooltip = '点击取消解析';
       try {
-        await parseProject(client, parseStatusBarItem);
-      } finally {
-        parseStatusBarItem.text = '$(play) CodeSage: 解析';
-        parseStatusBarItem.command = 'codeSage.parseProject';
-        parseStatusBarItem.tooltip = '点击开始解析项目代码';
+        const reason = await parseProject(client, parseStatusBarItem);
+        if (reason === 'completed') {
+          parseStatusBarItem.text = '$(check) CodeSage: 解析完成';
+          parseStatusBarItem.tooltip = '解析已完成，点击重新解析';
+        } else if (reason === 'cancelled') {
+          parseStatusBarItem.text = '$(circle-slash) CodeSage: 已取消';
+          parseStatusBarItem.tooltip = '解析已取消，点击重新解析';
+        } else {
+          parseStatusBarItem.text = '$(error) CodeSage: 解析出错';
+          parseStatusBarItem.tooltip = '解析出错，点击重试';
+        }
+      } catch {
+        parseStatusBarItem.text = '$(error) CodeSage: 解析出错';
+        parseStatusBarItem.tooltip = '解析出错，点击重试';
       }
+      parseStatusBarItem.command = 'codeSage.parseProject';
     }),
 
     vscode.commands.registerCommand('codeSage.cancelParse', async () => {
       const client = await getClient();
-      cancelParse(client);
+      await cancelParse(client);
     }),
 
     vscode.commands.registerCommand('codeSage.searchFunction', async () => {
