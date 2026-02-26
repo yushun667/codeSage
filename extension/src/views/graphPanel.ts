@@ -164,6 +164,60 @@ export class GraphPanel {
         }
         break;
       }
+
+      case 'findPath': {
+        const fromUsr = message.fromUsr as string;
+        const toUsr = message.toUsr as string;
+        try {
+          const response = await this.client.findPath(fromUsr, toUsr);
+          this.panel.webview.postMessage({
+            type: 'loadCallGraph',
+            data: response,
+            rootUsr: fromUsr,
+            direction: 'forward',
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`路径查询失败: ${msg}`);
+          logger.error('Failed to find path', msg);
+        }
+        break;
+      }
+
+      case 'loadFunctionCallGraph': {
+        const funcUsr = message.funcUsr as string;
+        try {
+          const response = await this.client.getForwardCallGraph(funcUsr, 3);
+          this.panel.webview.postMessage({
+            type: 'loadCallGraph',
+            data: response,
+            rootUsr: funcUsr,
+            direction: 'forward',
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`加载调用图失败: ${msg}`);
+          logger.error('Failed to load function call graph', msg);
+        }
+        break;
+      }
+
+      case 'loadVariableDataFlow': {
+        const varUsr = message.varUsr as string;
+        try {
+          const response = await this.client.getVariableDataFlow(varUsr, 3);
+          this.panel.webview.postMessage({
+            type: 'loadDataFlow',
+            data: response,
+            varUsr,
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`加载数据流图失败: ${msg}`);
+          logger.error('Failed to load variable data flow', msg);
+        }
+        break;
+      }
     }
   }
 

@@ -1,13 +1,25 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import Sigma from 'sigma';
 import Graph from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import { NodeData } from './NodeDetails';
 
+interface ContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  nodeId: string;
+  nodeData: NodeData | null;
+}
+
 interface GraphViewProps {
   graph: Graph;
   onNodeClick: (nodeData: NodeData) => void;
   onNodeDoubleClick: (usr: string) => void;
+  onNodeExpand?: (usr: string, direction: 'forward' | 'backward') => void;
+  onOpenSource?: (file: string, line: number) => void;
+  onSetRoot?: (usr: string) => void;
+  onRemoveNode?: (usr: string) => void;
   sigmaRef: React.MutableRefObject<Sigma | null>;
 }
 
@@ -15,11 +27,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
   graph,
   onNodeClick,
   onNodeDoubleClick,
+  onNodeExpand,
+  onOpenSource,
+  onSetRoot,
+  onRemoveNode,
   sigmaRef,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    visible: false, x: 0, y: 0, nodeId: '', nodeData: null,
+  });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -99,7 +118,29 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     sigma.on('clickStage', () => {
       selectedNodeRef.current = null;
+      setContextMenu(prev => ({ ...prev, visible: false }));
       sigma.refresh();
+    });
+
+    sigma.on('rightClickNode', ({ node, event }) => {
+      event.original.preventDefault();
+      const attrs = graph.getNodeAttributes(node);
+      setContextMenu({
+        visible: true,
+        x: event.original.clientX,
+        y: event.original.clientY,
+        nodeId: node,
+        nodeData: {
+          usr: node,
+          label: attrs.label || '',
+          file: attrs.file || '',
+          line: attrs.line || 0,
+          module: attrs.module || '',
+          nodeType: attrs.nodeType || 'function',
+          signature: attrs.signature,
+          varType: attrs.varType,
+        },
+      });
     });
 
     return () => {
@@ -124,7 +165,46 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, [graph, sigmaRef]);
 
-  return <div ref={containerRef} className="graph-container" />;
+  const closeMenu = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  }, []);
+
+  return (
+    <>
+      <div ref={containerRef} className="graph-container" onContextMenu={e => e.preventDefault()} />
+      {contextMenu.visible && contextMenu.nodeData && (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {contextMenu.nodeData.nodeType === 'function' && (
+            <>
+              <div className="context-item" onClick={() => {
+                onNodeExpand?.(contextMenu.nodeId, 'forward');
+                closeMenu();
+              }}>展开调用 &rarr;</div>
+              <div className="context-item" onClick={() => {
+                onNodeExpand?.(contextMenu.nodeId, 'backward');
+                closeMenu();
+              }}>&larr; 展开调用者</div>
+              <div className="context-item" onClick={() => {
+                onSetRoot?.(contextMenu.nodeId);
+                closeMenu();
+              }}>设为根节点</div>
+            </>
+          )}
+          <div className="context-item" onClick={() => {
+            if (contextMenu.nodeData) onOpenSource?.(contextMenu.nodeData.file, contextMenu.nodeData.line);
+            closeMenu();
+          }}>查看源码</div>
+          <div className="context-item" onClick={() => {
+            onRemoveNode?.(contextMenu.nodeId);
+            closeMenu();
+          }}>从视图移除</div>
+        </div>
+      )}
+    </>
+  );
 };
 
 export function runForceLayout(graph: Graph): void {

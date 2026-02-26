@@ -6,6 +6,7 @@ interface ToolbarProps {
   onClear: () => void;
   onRunLayout: () => void;
   onExportPNG: () => void;
+  onExportJSON: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
@@ -17,6 +18,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onClear,
   onRunLayout,
   onExportPNG,
+  onExportJSON,
   onZoomIn,
   onZoomOut,
   onFitView,
@@ -33,7 +35,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button className="tool-btn" onClick={onZoomOut} title="缩小">-</button>
         <button className="tool-btn" onClick={onFitView} title="适应视图">⊡</button>
         <button className="tool-btn" onClick={onRunLayout} title="重新布局">布局</button>
-        <button className="tool-btn" onClick={onExportPNG} title="导出图片">导出</button>
+        <button className="tool-btn" onClick={onExportPNG} title="导出PNG">PNG</button>
+        <button className="tool-btn" onClick={onExportJSON} title="导出JSON">JSON</button>
         <button className="tool-btn danger" onClick={onClear} title="清空">清空</button>
       </div>
     </div>

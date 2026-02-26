@@ -10,20 +10,25 @@ export interface CodeSageConfig {
   coreModules: string[];
   systemReplace: boolean;
   backendPort: number;
+  versionLabel: string;
 }
 
 export function getConfig(): CodeSageConfig {
   const cfg = vscode.workspace.getConfiguration('codeSage');
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+  const versionLabel = cfg.get<string>('versionLabel') || 'default';
+  const baseDbPath = cfg.get<string>('dbPath') || path.join(workspaceRoot, '.codesage_db');
+  const versionedDbPath = versionLabel === 'default' ? baseDbPath : `${baseDbPath}_${versionLabel}`;
 
   const config: CodeSageConfig = {
     analyzerPath: cfg.get<string>('analyzerPath') || '',
     compileDbPath: cfg.get<string>('compileDbPath') || path.join(workspaceRoot, 'compile_commands.json'),
-    dbPath: cfg.get<string>('dbPath') || path.join(workspaceRoot, '.codesage_db'),
+    dbPath: versionedDbPath,
     projectRoot: cfg.get<string>('projectRoot') || workspaceRoot,
     coreModules: cfg.get<string[]>('coreModules') || [],
     systemReplace: cfg.get<boolean>('systemReplace') || false,
     backendPort: cfg.get<number>('backendPort') || 9527,
+    versionLabel,
   };
 
   logger.debug('Config loaded', config);
@@ -64,6 +69,14 @@ export async function configureProject(): Promise<void> {
   if (modules !== undefined) {
     const moduleList = modules.split(',').filter(Boolean);
     await vscode.workspace.getConfiguration('codeSage').update('coreModules', moduleList, true);
+  }
+
+  const version = await vscode.window.showInputBox({
+    prompt: '版本标签（如 v5.10、ohos-3.2，不同版本使用独立数据库）',
+    value: getConfig().versionLabel,
+  });
+  if (version !== undefined) {
+    await vscode.workspace.getConfiguration('codeSage').update('versionLabel', version || 'default', true);
   }
 
   vscode.window.showInformationMessage('CodeSage 项目配置已更新');

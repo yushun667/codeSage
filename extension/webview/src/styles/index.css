@@ -388,3 +388,68 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
+
+/* Context Menu */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.context-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-primary);
+  transition: background 0.1s;
+}
+
+.context-item:hover {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+/* Path Query Inputs */
+.path-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.path-inputs .search-input {
+  font-size: 12px;
+}
+
+/* Data Flow Filter Bar */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0;
+  align-items: center;
+}
+
+.filter-bar label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.filter-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.filter-btn.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}

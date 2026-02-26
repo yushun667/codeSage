@@ -87,6 +87,11 @@
           "type": "number",
           "default": 9527,
           "description": "后端服务端口"
+        },
+        "codeSage.versionLabel": {
+          "type": "string",
+          "default": "default",
+          "description": "当前分析的代码版本标签（如 v5.10、ohos-3.2），不同版本使用独立数据库"
         }
       }
     },

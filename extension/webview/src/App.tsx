@@ -9,11 +9,15 @@ import { NodeDetails, NodeData } from './components/NodeDetails';
 import { Toolbar } from './components/Toolbar';
 import { MiniMap } from './components/MiniMap';
 
+type EdgeFilter = 'all' | 'read' | 'write';
+
 const App: React.FC = () => {
   const { postMessage, onMessage } = useVSCode();
   const { graph, nodeCount, edgeCount, clearGraph, loadCallGraph, loadDataFlow, addNodes } = useGraph();
   const { results, loading, search, handleResults, setResults } = useSearch();
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
+  const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>('all');
+  const [isDataFlowView, setIsDataFlowView] = useState(false);
   const sigmaRef = useRef<Sigma | null>(null);
 
   // Handle messages from extension
@@ -21,10 +25,14 @@ const App: React.FC = () => {
     return onMessage((data: any) => {
       switch (data.type) {
         case 'loadCallGraph':
+          setIsDataFlowView(false);
+          setEdgeFilter('all');
           loadCallGraph(data.data as CallGraphData, data.rootUsr);
           setTimeout(() => runForceLayout(graph), 100);
           break;
         case 'loadDataFlow':
+          setIsDataFlowView(true);
+          setEdgeFilter('all');
           loadDataFlow(data.data as DataFlowData, data.varUsr);
           setTimeout(() => runForceLayout(graph), 100);
           break;
@@ -68,6 +76,10 @@ const App: React.FC = () => {
     search(query, type);
   }, [search]);
 
+  const handleFindPath = useCallback((fromUsr: string, toUsr: string) => {
+    postMessage({ type: 'findPath', fromUsr, toUsr });
+  }, [postMessage]);
+
   const handleResultClick = useCallback((result: SearchResult) => {
     if (result.type) {
       // Variable
@@ -85,7 +97,6 @@ const App: React.FC = () => {
   }, [graph]);
 
   const handleExportPNG = useCallback(() => {
-    // Use sigma's canvas to export
     const canvas = document.querySelector('.graph-container canvas') as HTMLCanvasElement;
     if (canvas) {
       const link = document.createElement('a');
@@ -94,6 +105,24 @@ const App: React.FC = () => {
       link.click();
     }
   }, []);
+
+  const handleExportJSON = useCallback(() => {
+    const nodes: Record<string, unknown>[] = [];
+    const edges: Record<string, unknown>[] = [];
+    graph.forEachNode((node, attrs) => {
+      nodes.push({ id: node, ...attrs });
+    });
+    graph.forEachEdge((_edge, attrs, source, target) => {
+      edges.push({ source, target, ...attrs });
+    });
+    const json = JSON.stringify({ nodes, edges }, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.download = 'codesage-graph.json';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }, [graph]);
 
   const handleZoomIn = useCallback(() => {
     const camera = sigmaRef.current?.getCamera();
@@ -116,10 +145,56 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const handleRemoveNode = useCallback((usr: string) => {
+    if (graph.hasNode(usr)) {
+      graph.dropNode(usr);
+      sigmaRef.current?.refresh();
+    }
+  }, [graph]);
+
+  const handleSetRoot = useCallback((usr: string) => {
+    postMessage({ type: 'loadFunctionCallGraph', funcUsr: usr });
+  }, [postMessage]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const camera = sigmaRef.current?.getCamera();
+      if (!camera) return;
+      const step = 50;
+      switch (e.key) {
+        case 'ArrowUp':    camera.setState({ y: camera.getState().y - step / camera.getState().ratio }); break;
+        case 'ArrowDown':  camera.setState({ y: camera.getState().y + step / camera.getState().ratio }); break;
+        case 'ArrowLeft':  camera.setState({ x: camera.getState().x - step / camera.getState().ratio }); break;
+        case 'ArrowRight': camera.setState({ x: camera.getState().x + step / camera.getState().ratio }); break;
+        case '+': case '=': camera.animatedZoom({ duration: 150 }); break;
+        case '-':            camera.animatedUnzoom({ duration: 150 }); break;
+        case 'Enter':
+          if (selectedNode) handleNodeDoubleClick(selectedNode.usr);
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedNode, handleNodeDoubleClick]);
+
+  // Apply edge filter to graph visibility
+  useEffect(() => {
+    if (!isDataFlowView) return;
+    graph.forEachEdge((edge, attrs) => {
+      const etype = attrs.edgeType as string;
+      let hidden = false;
+      if (edgeFilter === 'read' && etype !== 'direct_read' && etype !== 'call') hidden = true;
+      if (edgeFilter === 'write' && etype !== 'direct_write' && etype !== 'call') hidden = true;
+      graph.setEdgeAttribute(edge, 'hidden', hidden);
+    });
+    sigmaRef.current?.refresh();
+  }, [edgeFilter, isDataFlowView, graph]);
+
   return (
     <div className="app">
       <div className="sidebar">
-        <SearchBar onSearch={handleSearch} loading={loading} />
+        <SearchBar onSearch={handleSearch} onFindPath={handleFindPath} loading={loading} />
 
         {results.length > 0 && (
           <div className="search-results">
@@ -159,14 +234,27 @@ const App: React.FC = () => {
           onClear={clearGraph}
           onRunLayout={handleRunLayout}
           onExportPNG={handleExportPNG}
+          onExportJSON={handleExportJSON}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onFitView={handleFitView}
         />
+        {isDataFlowView && (
+          <div className="filter-bar">
+            <label>过滤:</label>
+            <button className={`filter-btn ${edgeFilter === 'all' ? 'active' : ''}`} onClick={() => setEdgeFilter('all')}>全部</button>
+            <button className={`filter-btn ${edgeFilter === 'read' ? 'active' : ''}`} onClick={() => setEdgeFilter('read')}>只读</button>
+            <button className={`filter-btn ${edgeFilter === 'write' ? 'active' : ''}`} onClick={() => setEdgeFilter('write')}>只写</button>
+          </div>
+        )}
         <GraphView
           graph={graph}
           onNodeClick={handleNodeClick}
           onNodeDoubleClick={handleNodeDoubleClick}
+          onNodeExpand={handleExpand}
+          onOpenSource={handleOpenSource}
+          onSetRoot={handleSetRoot}
+          onRemoveNode={handleRemoveNode}
           sigmaRef={sigmaRef}
         />
       </div>

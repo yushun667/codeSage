@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
+import WebSocket from 'ws';
 import { logger } from '../logger';
 import { ApiClient } from '../apiClient';
+import { getConfig } from '../config';
 
 export async function parseProject(client: ApiClient): Promise<void> {
   logger.info('parseProject command executed');
@@ -20,30 +22,74 @@ export async function parseProject(client: ApiClient): Promise<void> {
 
   try {
     await client.startParse();
-    vscode.window.showInformationMessage('解析已开始，请在输出面板查看进度');
     logger.info('Parse started successfully');
 
-    // Poll for completion
-    const pollInterval = setInterval(async () => {
-      try {
-        const s = await client.getParseStatus();
-        if (!s.parsing) {
-          clearInterval(pollInterval);
-          const stats = await client.getStats();
-          vscode.window.showInformationMessage(
-            `解析完成！共 ${stats.functions || 0} 个函数，${stats.edges || 0} 条调用边，${stats.variables || 0} 个全局变量`
-          );
-          logger.info('Parse completed', stats);
-        }
-      } catch {
-        clearInterval(pollInterval);
-      }
-    }, 3000);
+    const config = getConfig();
+    const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    statusBar.text = '$(sync~spin) CodeSage: 解析中...';
+    statusBar.show();
+
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(`ws://127.0.0.1:${config.backendPort}/ws`);
+      ws.on('message', (data: Buffer) => {
+        try {
+          const progress = JSON.parse(data.toString());
+          if (progress.status === 'running') {
+            statusBar.text = `$(sync~spin) CodeSage: ${progress.message}`;
+            logger.debug('Parse progress', progress.message);
+          } else if (progress.status === 'completed') {
+            statusBar.text = '$(check) CodeSage: 解析完成';
+            const stats = progress.data || {};
+            vscode.window.showInformationMessage(
+              `解析完成！共 ${stats.total_functions || 0} 个函数，${stats.total_edges || 0} 条调用边，${stats.total_variables || 0} 个全局变量`
+            );
+            logger.info('Parse completed via WebSocket', stats);
+            setTimeout(() => statusBar.dispose(), 5000);
+            ws?.close();
+          } else if (progress.status === 'error') {
+            statusBar.text = '$(error) CodeSage: 解析出错';
+            vscode.window.showErrorMessage(`解析出错: ${progress.message}`);
+            logger.error('Parse error via WebSocket', progress.message);
+            setTimeout(() => statusBar.dispose(), 5000);
+            ws?.close();
+          }
+        } catch { /* ignore parse errors */ }
+      });
+      ws.on('error', () => {
+        logger.warn('WebSocket connection failed, falling back to polling');
+        ws = null;
+        startPolling(client, statusBar);
+      });
+    } catch {
+      startPolling(client, statusBar);
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     vscode.window.showErrorMessage(`解析失败: ${msg}`);
     logger.error('Parse failed', msg);
   }
+}
+
+function startPolling(client: ApiClient, statusBar: vscode.StatusBarItem): void {
+  const pollInterval = setInterval(async () => {
+    try {
+      const s = await client.getParseStatus();
+      if (!s.parsing) {
+        clearInterval(pollInterval);
+        const stats = await client.getStats();
+        statusBar.text = '$(check) CodeSage: 解析完成';
+        vscode.window.showInformationMessage(
+          `解析完成！共 ${(stats as Record<string,number>).functions || 0} 个函数，${(stats as Record<string,number>).edges || 0} 条调用边，${(stats as Record<string,number>).variables || 0} 个全局变量`
+        );
+        logger.info('Parse completed', stats);
+        setTimeout(() => statusBar.dispose(), 5000);
+      }
+    } catch {
+      clearInterval(pollInterval);
+      statusBar.dispose();
+    }
+  }, 3000);
 }
 
 export async function cancelParse(client: ApiClient): Promise<void> {
