@@ -136,12 +136,12 @@ void CallExprCallback::run(const MatchFinder::MatchResult& result) {
 
     // Find the enclosing function (caller)
     auto& ctx = *result.Context;
-    const auto* parents = &ctx.getParents(*call);
+    auto parent_list = ctx.getParents(*call);
     const FunctionDecl* caller_decl = nullptr;
 
     // Walk up AST parents to find enclosing FunctionDecl
     std::vector<clang::DynTypedNode> worklist;
-    for (const auto& p : *parents) {
+    for (const auto& p : parent_list) {
         worklist.push_back(p);
     }
 

@@ -35,6 +35,7 @@ private:
 class QueryEngine {
 public:
     QueryEngine(Storage& storage, size_t cache_size = 5000);
+    ~QueryEngine();
 
     // Function search
     std::vector<FunctionInfo> searchFunctions(const std::string& query, int limit = 50);

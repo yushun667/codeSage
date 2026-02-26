@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(CodeSageAnalyzer CXX)
+project(CodeSageAnalyzer C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# LLVM pre-built binaries are compiled without RTTI
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
 
 set(THIRD_PARTY_DIR "${CMAKE_SOURCE_DIR}/../third_party")
 set(PROTO_DIR "${CMAKE_SOURCE_DIR}/../proto")
@@ -47,6 +50,12 @@ if(NOT PROTOC_EXECUTABLE)
 endif()
 
 message(STATUS "Using protoc: ${PROTOC_EXECUTABLE}")
+
+# Detect system protobuf include path (homebrew)
+if(EXISTS "/opt/homebrew/include/google/protobuf/message.h")
+    set(PROTOBUF_SYS_INCLUDE "/opt/homebrew/include")
+    message(STATUS "Found system protobuf headers at ${PROTOBUF_SYS_INCLUDE}")
+endif()
 
 set(GENERATED_DIR "${CMAKE_SOURCE_DIR}/src/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
@@ -94,21 +103,43 @@ target_include_directories(code-sage PRIVATE
     ${JSON_INCLUDE}
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
+    ${PROTOBUF_SYS_INCLUDE}
 )
 
-# Find protobuf libraries
+# Find protobuf libraries: first in third_party, then system
 find_library(PROTOBUF_LIBRARY protobuf
     PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}"
     NO_DEFAULT_PATH)
 
 if(NOT PROTOBUF_LIBRARY)
-    find_library(PROTOBUF_LIBRARY protobuf)
+    find_library(PROTOBUF_LIBRARY protobuf
+        PATHS "/opt/homebrew/lib" "/usr/local/lib" "/usr/lib")
 endif()
 
+if(NOT PROTOBUF_LIBRARY)
+    message(FATAL_ERROR "libprotobuf not found")
+endif()
+
+message(STATUS "Using protobuf library: ${PROTOBUF_LIBRARY}")
+
 # Find absl libraries needed by protobuf v25+
-file(GLOB ABSL_LIBS "${PROTOBUF_BUILD}/lib/libabsl_*.a" "${PROTOBUF_BUILD}/third_party/abseil-cpp/absl/*/libabsl_*.a")
-find_library(UTF8_RANGE_LIB utf8_range PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" NO_DEFAULT_PATH)
-find_library(UTF8_VALIDITY_LIB utf8_validity PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" NO_DEFAULT_PATH)
+file(GLOB ABSL_LIBS
+    "${PROTOBUF_BUILD}/lib/libabsl_*.a"
+    "${PROTOBUF_BUILD}/third_party/abseil-cpp/absl/*/libabsl_*.a"
+    "/opt/homebrew/lib/libabsl_*.dylib"
+)
+find_library(UTF8_RANGE_LIB utf8_range
+    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "/opt/homebrew/lib"
+    NO_DEFAULT_PATH)
+find_library(UTF8_VALIDITY_LIB utf8_validity
+    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "/opt/homebrew/lib"
+    NO_DEFAULT_PATH)
+if(NOT UTF8_RANGE_LIB)
+    find_library(UTF8_RANGE_LIB utf8_range)
+endif()
+if(NOT UTF8_VALIDITY_LIB)
+    find_library(UTF8_VALIDITY_LIB utf8_validity)
+endif()
 
 # Clang libraries for LibTooling
 set(CLANG_LIBS
@@ -121,6 +152,7 @@ set(CLANG_LIBS
     clangAnalysis
     clangAST
     clangASTMatchers
+    clangIndex
     clangEdit
     clangLex
     clangBasic
@@ -189,6 +221,7 @@ if(BUILD_TESTS)
             ${JSON_INCLUDE}
             ${LLVM_INCLUDE_DIRS}
             ${CLANG_INCLUDE_DIRS}
+            ${PROTOBUF_SYS_INCLUDE}
         )
 
         find_library(GTEST_LIB gtest PATHS "${GTEST_LIB_DIR}" NO_DEFAULT_PATH)

@@ -22,7 +22,7 @@ export function createVariableRoutes(analyzer: AnalyzerService): Router {
   });
 
   router.get('/api/variables/:usr', async (req: Request, res: Response) => {
-    const usr = decodeURIComponent(req.params.usr);
+    const usr = decodeURIComponent(req.params.usr as string);
 
     logger.info('GET /api/variables/:usr', { usr });
 
@@ -37,7 +37,7 @@ export function createVariableRoutes(analyzer: AnalyzerService): Router {
   });
 
   router.get('/api/variables/:usr/accesses', async (req: Request, res: Response) => {
-    const varUsr = decodeURIComponent(req.params.usr);
+    const varUsr = decodeURIComponent(req.params.usr as string);
     const funcUsr = req.query.function_usr as string || '';
 
     logger.info('GET /api/variables/:usr/accesses', { varUsr, funcUsr });

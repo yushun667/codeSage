@@ -22,7 +22,7 @@ export function createFunctionRoutes(analyzer: AnalyzerService): Router {
   });
 
   router.get('/api/functions/:usr', async (req: Request, res: Response) => {
-    const usr = decodeURIComponent(req.params.usr);
+    const usr = decodeURIComponent(req.params.usr as string);
     logger.info('GET /api/functions/:usr', { usr });
 
     try {

@@ -80,7 +80,7 @@ Storage::Storage() {
     options_.max_open_files = 256;
     options_.write_buffer_size = 64 * 1024 * 1024;
     options_.max_write_buffer_number = 3;
-    options_.compression = rocksdb::kLZ4Compression;
+    options_.compression = rocksdb::kNoCompression;
 }
 
 Storage::~Storage() {
@@ -179,13 +179,14 @@ std::vector<FunctionInfo> Storage::searchFunctions(const std::string& query, int
     std::vector<FunctionInfo> results;
 
     std::string prefix = KeyBuilder::fnameSearchPrefix(query);
+    const size_t fname_prefix_len = 10; // "idx:fname:" is 10 chars
     iterateWithPrefix(prefix, [&](const std::string& key, const std::string&) -> bool {
         if (static_cast<int>(results.size()) >= limit) return false;
 
-        // Extract USR from key: "idx:fname:<name>:<usr>"
-        auto last_colon = key.rfind(':');
-        if (last_colon == std::string::npos) return true;
-        std::string usr = key.substr(last_colon + 1);
+        // Key format: "idx:fname:<name>:<usr>" — name has no colons
+        auto sep = key.find(':', fname_prefix_len);
+        if (sep == std::string::npos) return true;
+        std::string usr = key.substr(sep + 1);
 
         auto func = getFunction(usr);
         if (func) {
@@ -283,12 +284,14 @@ std::vector<GlobalVarInfo> Storage::searchVariables(const std::string& query, in
     std::vector<GlobalVarInfo> results;
 
     std::string prefix = KeyBuilder::vnameSearchPrefix(query);
+    const size_t vname_prefix_len = 10; // "idx:vname:" is 10 chars
     iterateWithPrefix(prefix, [&](const std::string& key, const std::string&) -> bool {
         if (static_cast<int>(results.size()) >= limit) return false;
 
-        auto last_colon = key.rfind(':');
-        if (last_colon == std::string::npos) return true;
-        std::string usr = key.substr(last_colon + 1);
+        // Key format: "idx:vname:<name>:<usr>" — name has no colons
+        auto sep = key.find(':', vname_prefix_len);
+        if (sep == std::string::npos) return true;
+        std::string usr = key.substr(sep + 1);
 
         auto var = getGlobalVar(usr);
         if (var) {

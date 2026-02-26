@@ -6,7 +6,7 @@ export function createDataflowRoutes(analyzer: AnalyzerService): Router {
   const router = Router();
 
   router.get('/api/dataflow/variable/:usr', async (req: Request, res: Response) => {
-    const varUsr = decodeURIComponent(req.params.usr);
+    const varUsr = decodeURIComponent(req.params.usr as string);
     const depth = req.query.depth as string || '3';
     const fromUsr = req.query.from_usr as string || '';
     const toUsr = req.query.to_usr as string || '';

@@ -6,7 +6,7 @@ export function createCallgraphRoutes(analyzer: AnalyzerService): Router {
   const router = Router();
 
   router.get('/api/callgraph/forward/:usr', async (req: Request, res: Response) => {
-    const usr = decodeURIComponent(req.params.usr);
+    const usr = decodeURIComponent(req.params.usr as string);
     const depth = req.query.depth as string || '2';
 
     logger.info('GET /api/callgraph/forward', { usr, depth });
@@ -22,7 +22,7 @@ export function createCallgraphRoutes(analyzer: AnalyzerService): Router {
   });
 
   router.get('/api/callgraph/backward/:usr', async (req: Request, res: Response) => {
-    const usr = decodeURIComponent(req.params.usr);
+    const usr = decodeURIComponent(req.params.usr as string);
     const depth = req.query.depth as string || '2';
 
     logger.info('GET /api/callgraph/backward', { usr, depth });

@@ -71,6 +71,8 @@ QueryEngine::QueryEngine(Storage& storage, size_t cache_size)
     CS_INFO("QueryEngine initialized, cache_size={}", cache_size);
 }
 
+QueryEngine::~QueryEngine() = default;
+
 std::vector<FunctionInfo> QueryEngine::searchFunctions(const std::string& query, int limit) {
     CS_INFO("searchFunctions: query='{}', limit={}", query, limit);
     return storage_.searchFunctions(query, limit);
@@ -102,8 +104,8 @@ FunctionInfo QueryEngine::getOrLoadFunction(const std::string& usr) {
 void QueryEngine::collectForward(const std::string& usr, int depth,
                                   std::unordered_set<std::string>& visited_nodes,
                                   std::vector<CallEdge>& collected_edges) {
-    if (depth <= 0) return;
     if (!visited_nodes.insert(usr).second) return;
+    if (depth <= 0) return;
 
     auto edges = storage_.getForwardEdges(usr);
     for (const auto& edge : edges) {
@@ -115,8 +117,8 @@ void QueryEngine::collectForward(const std::string& usr, int depth,
 void QueryEngine::collectBackward(const std::string& usr, int depth,
                                    std::unordered_set<std::string>& visited_nodes,
                                    std::vector<CallEdge>& collected_edges) {
-    if (depth <= 0) return;
     if (!visited_nodes.insert(usr).second) return;
+    if (depth <= 0) return;
 
     auto edges = storage_.getBackwardEdges(usr);
     for (const auto& edge : edges) {
@@ -132,7 +134,6 @@ CallGraphResponse QueryEngine::getForwardCallGraph(const std::string& root_usr, 
     std::unordered_set<std::string> visited_nodes;
     std::vector<CallEdge> collected_edges;
 
-    visited_nodes.insert(root_usr);
     collectForward(root_usr, depth, visited_nodes, collected_edges);
 
     for (const auto& usr : visited_nodes) {
@@ -156,7 +157,6 @@ CallGraphResponse QueryEngine::getBackwardCallGraph(const std::string& root_usr,
     std::unordered_set<std::string> visited_nodes;
     std::vector<CallEdge> collected_edges;
 
-    visited_nodes.insert(root_usr);
     collectBackward(root_usr, depth, visited_nodes, collected_edges);
 
     for (const auto& usr : visited_nodes) {
