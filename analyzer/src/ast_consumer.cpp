@@ -193,67 +193,35 @@ AnalyzerStats SourceAnalyzer::parseFilesWithDB(
     CompilationDatabase& cdb, const std::vector<std::string>& files) {
 
     const int jobs = std::max(1, config_.parallel_jobs);
+    const size_t total = files.size();
 
-    if (jobs <= 1 || files.size() <= 1) {
-        return parseBatch(cdb, files);
+    // Emit total count to stderr so the backend can detect it
+    std::cerr << total << " files need parsing" << std::endl;
+
+    std::atomic<size_t> files_done{0};
+    std::mutex progress_mutex;
+
+    if (jobs <= 1 || total <= 1) {
+        CS_INFO("Single-threaded parse: {} files", total);
+        return parseBatchWithProgress(cdb, files, total, files_done, progress_mutex);
     }
 
-    CS_INFO("Parallel parse: {} files with {} jobs", files.size(), jobs);
+    CS_INFO("Parallel parse: {} files with {} jobs", total, jobs);
 
-    // Split files into batches
     std::vector<std::vector<std::string>> batches(jobs);
-    for (size_t i = 0; i < files.size(); ++i) {
+    for (size_t i = 0; i < total; ++i) {
         batches[i % jobs].push_back(files[i]);
     }
 
     std::vector<AnalyzerStats> batch_stats(jobs);
     std::vector<std::thread> threads;
-    std::atomic<size_t> files_done{0};
-    std::mutex progress_mutex;
 
     for (int i = 0; i < jobs; ++i) {
         if (batches[i].empty()) continue;
         threads.emplace_back([&, i]() {
             CS_INFO("Worker {} starting: {} files", i, batches[i].size());
-
-            FunctionDefCallback func_cb(storage_, config_.project_root, config_.core_modules);
-            CallExprCallback call_cb(storage_);
-            GlobalVarDeclCallback var_cb(storage_, config_.project_root, config_.core_modules);
-            VarRefCallback ref_cb(storage_);
-
-            MatchFinder finder;
-            finder.addMatcher(functionDecl(isDefinition()).bind("func"), &func_cb);
-            finder.addMatcher(
-                callExpr(callee(functionDecl().bind("callee"))).bind("call"),
-                &call_cb);
-            finder.addMatcher(varDecl(hasGlobalStorage()).bind("globalVar"), &var_cb);
-            finder.addMatcher(
-                declRefExpr(to(varDecl(hasGlobalStorage()).bind("refVar"))).bind("varRef"),
-                &ref_cb);
-
-            ClangTool tool(cdb, batches[i]);
-            tool.setDiagnosticConsumer(new clang::IgnoringDiagConsumer());
-            int result = tool.run(newFrontendActionFactory(&finder).get());
-
-            if (result != 0) {
-                CS_WARN("Worker {} ClangTool returned non-zero: {}", i, result);
-            }
-
-            for (const auto& f : batches[i]) {
-                storage_.markFileParsed(f);
-                auto done = files_done.fetch_add(1) + 1;
-                std::lock_guard<std::mutex> lock(progress_mutex);
-                // ClangTool prints its own [N/M], emit aggregate progress to stderr
-                std::cerr << "[" << done << "/" << files.size()
-                          << "] Processed file " << f << ".\n";
-            }
-
-            batch_stats[i].files_processed = batches[i].size();
-            batch_stats[i].functions_collected = func_cb.getCollectedCount();
-            batch_stats[i].edges_collected = call_cb.getCollectedCount();
-            batch_stats[i].variables_collected = var_cb.getCollectedCount();
-            batch_stats[i].accesses_collected = ref_cb.getCollectedCount();
-
+            batch_stats[i] = parseBatchWithProgress(
+                cdb, batches[i], total, files_done, progress_mutex);
             CS_INFO("Worker {} done: {} funcs, {} edges",
                     i, batch_stats[i].functions_collected, batch_stats[i].edges_collected);
         });
@@ -273,8 +241,10 @@ AnalyzerStats SourceAnalyzer::parseFilesWithDB(
     return stats;
 }
 
-AnalyzerStats SourceAnalyzer::parseBatch(
-    CompilationDatabase& cdb, const std::vector<std::string>& files) {
+AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
+    CompilationDatabase& cdb, const std::vector<std::string>& files,
+    size_t total_files, std::atomic<size_t>& files_done,
+    std::mutex& progress_mutex) {
 
     AnalyzerStats stats;
 
@@ -293,18 +263,25 @@ AnalyzerStats SourceAnalyzer::parseBatch(
         declRefExpr(to(varDecl(hasGlobalStorage()).bind("refVar"))).bind("varRef"),
         &ref_cb);
 
-    ClangTool tool(cdb, files);
-    tool.setDiagnosticConsumer(new clang::IgnoringDiagConsumer());
+    auto factory = newFrontendActionFactory(&finder);
 
-    CS_INFO("Running ClangTool on {} files...", files.size());
-    int result = tool.run(newFrontendActionFactory(&finder).get());
+    for (const auto& file : files) {
+        ClangTool tool(cdb, {file});
+        tool.setDiagnosticConsumer(new clang::IgnoringDiagConsumer());
+        int result = tool.run(factory.get());
 
-    if (result != 0) {
-        CS_WARN("ClangTool returned non-zero: {} (some files may have had errors)", result);
-    }
+        if (result != 0) {
+            CS_WARN("ClangTool returned non-zero for {}: {}", file, result);
+        }
 
-    for (const auto& f : files) {
-        storage_.markFileParsed(f);
+        storage_.markFileParsed(file);
+        auto done = files_done.fetch_add(1) + 1;
+
+        {
+            std::lock_guard<std::mutex> lock(progress_mutex);
+            std::cerr << "[" << done << "/" << total_files
+                      << "] Processed file " << file << "." << std::endl;
+        }
     }
 
     stats.files_processed = files.size();

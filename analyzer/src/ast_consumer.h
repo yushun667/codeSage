@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <atomic>
+#include <mutex>
 
 #include <clang/Tooling/Tooling.h>
 #include <clang/Tooling/CompilationDatabase.h>
@@ -56,9 +58,13 @@ private:
     AnalyzerStats parseFilesWithDB(clang::tooling::CompilationDatabase& cdb,
                                     const std::vector<std::string>& files);
 
-    // Single-threaded batch parse (used by each worker thread)
-    AnalyzerStats parseBatch(clang::tooling::CompilationDatabase& cdb,
-                              const std::vector<std::string>& files);
+    // Parse a batch of files one-by-one with real-time progress output
+    AnalyzerStats parseBatchWithProgress(
+        clang::tooling::CompilationDatabase& cdb,
+        const std::vector<std::string>& files,
+        size_t total_files,
+        std::atomic<size_t>& files_done,
+        std::mutex& progress_mutex);
 
     Storage& storage_;
     AnalyzerConfig config_;
