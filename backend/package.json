@@ -1,0 +1,30 @@
+{
+  "name": "codesage-backend",
+  "version": "1.0.0",
+  "description": "CodeSage analysis backend service",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "winston": "^3.17.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "ts-node": "^10.9.2",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2"
+  }
+}

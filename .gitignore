@@ -1,0 +1,62 @@
+# Build outputs
+build/
+dist/
+out/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Third-party dependencies (downloaded by setup script)
+third_party/llvm/
+third_party/rocksdb/
+third_party/protobuf/
+third_party/spdlog/
+third_party/nlohmann/
+third_party/googletest/
+
+# Generated protobuf files
+analyzer/src/generated/
+
+# Node modules
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# RocksDB data
+*.sst
+*.ldb
+LOCK
+CURRENT
+MANIFEST-*
+LOG
+LOG.old.*
+
+# VSCode extension output
+extension/*.vsix
+extension/webview/dist/
+
+# TypeScript build
+*.js.map
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.local

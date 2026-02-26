@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package codesage;
+
+message FunctionInfo {
+  string usr = 1;
+  string name = 2;
+  string file = 3;
+  int32 line = 4;
+  int32 column = 5;
+  string module = 6;
+  string signature = 7;
+  repeated string modifies = 8;
+  repeated string references = 9;
+}
+
+message CallEdge {
+  string caller_usr = 1;
+  string callee_usr = 2;
+  string call_file = 3;
+  int32 call_line = 4;
+  int32 call_column = 5;
+}
+
+message GlobalVarInfo {
+  string usr = 1;
+  string name = 2;
+  string file = 3;
+  int32 line = 4;
+  string type = 5;
+  bool is_extern = 6;
+  string module = 7;
+}
+
+message GlobalVarAccess {
+  string var_usr = 1;
+  string function_usr = 2;
+  bool is_write = 3;
+  string access_file = 4;
+  int32 access_line = 5;
+  int32 access_column = 6;
+}
+
+message DataFlowEdge {
+  string from_usr = 1;
+  string to_usr = 2;
+  string var_usr = 3;
+  string type = 4;  // "call", "direct_read", "direct_write", "propagated"
+}
+
+message CallGraphResponse {
+  repeated FunctionInfo nodes = 1;
+  repeated CallEdge edges = 2;
+}
+
+message DataFlowResponse {
+  repeated FunctionInfo function_nodes = 1;
+  repeated GlobalVarInfo variable_nodes = 2;
+  repeated DataFlowEdge edges = 3;
+}
+
+message SearchResult {
+  repeated FunctionInfo functions = 1;
+}
+
+message VariableSearchResult {
+  repeated GlobalVarInfo variables = 1;
+}
+
+message AccessList {
+  repeated GlobalVarAccess accesses = 1;
+}

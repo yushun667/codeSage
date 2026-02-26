@@ -1,0 +1,129 @@
+{
+  "name": "codesage",
+  "displayName": "CodeSage",
+  "description": "函数调用链与全局变量数据流分析工具 — 基于 Clang LibTooling",
+  "version": "1.0.0",
+  "publisher": "codesage",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": ["Programming Languages", "Visualization"],
+  "activationEvents": [
+    "onCommand:codeSage.parseProject",
+    "onCommand:codeSage.searchFunction",
+    "onCommand:codeSage.searchVariable",
+    "onCommand:codeSage.openGraph",
+    "onCommand:codeSage.configureProject"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeSage.parseProject",
+        "title": "CodeSage: 开始解析",
+        "category": "CodeSage"
+      },
+      {
+        "command": "codeSage.searchFunction",
+        "title": "CodeSage: 搜索函数",
+        "category": "CodeSage"
+      },
+      {
+        "command": "codeSage.searchVariable",
+        "title": "CodeSage: 搜索全局变量",
+        "category": "CodeSage"
+      },
+      {
+        "command": "codeSage.openGraph",
+        "title": "CodeSage: 打开图谱视图",
+        "category": "CodeSage"
+      },
+      {
+        "command": "codeSage.configureProject",
+        "title": "CodeSage: 配置项目",
+        "category": "CodeSage"
+      },
+      {
+        "command": "codeSage.cancelParse",
+        "title": "CodeSage: 取消解析",
+        "category": "CodeSage"
+      }
+    ],
+    "configuration": {
+      "title": "CodeSage",
+      "properties": {
+        "codeSage.analyzerPath": {
+          "type": "string",
+          "default": "",
+          "description": "code-sage 可执行文件路径"
+        },
+        "codeSage.compileDbPath": {
+          "type": "string",
+          "default": "",
+          "description": "compile_commands.json 路径"
+        },
+        "codeSage.dbPath": {
+          "type": "string",
+          "default": "",
+          "description": "RocksDB 数据库存储路径"
+        },
+        "codeSage.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "项目根目录路径"
+        },
+        "codeSage.coreModules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "核心模块列表（如 kernel/, mm/）"
+        },
+        "codeSage.systemReplace": {
+          "type": "boolean",
+          "default": false,
+          "description": "自动将 -I 替换为 --isystem"
+        },
+        "codeSage.backendPort": {
+          "type": "number",
+          "default": 9527,
+          "description": "后端服务端口"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codesage-explorer",
+          "title": "CodeSage",
+          "icon": "$(search)"
+        }
+      ]
+    },
+    "views": {
+      "codesage-explorer": [
+        {
+          "id": "codesage.searchResults",
+          "name": "搜索结果"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile && cd webview && npm run build",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "test": "node --experimental-vm-modules node_modules/vitest/vitest.mjs run"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.70.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0",
+    "@vscode/vsce": "^3.0.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
