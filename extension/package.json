@@ -55,16 +55,16 @@
         "category": "CodeSage"
       },
       {
-        "command": "codeSage.searchFunctionFromSelection",
-        "title": "CodeSage: 搜索选中函数",
+        "command": "codeSage.searchFunctionAtCursor",
+        "title": "CodeSage: 搜索此函数",
         "category": "CodeSage"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "command": "codeSage.searchFunctionFromSelection",
-          "when": "editorHasSelection",
+          "command": "codeSage.searchFunctionAtCursor",
+          "when": "editorTextFocus && resourceLangId =~ /^(c|cpp|objective-c|objective-cpp)$/",
           "group": "navigation@100"
         }
       ]

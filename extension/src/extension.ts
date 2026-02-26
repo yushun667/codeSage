@@ -96,15 +96,29 @@ export async function activate(context: vscode.ExtensionContext) {
       searchFunction(client, showFunctionInGraph);
     }),
 
-    vscode.commands.registerCommand('codeSage.searchFunctionFromSelection', async () => {
+    vscode.commands.registerCommand('codeSage.searchFunctionAtCursor', async () => {
       const editor = vscode.window.activeTextEditor;
-      const selection = editor?.document.getText(editor.selection).trim();
-      if (!selection) {
-        vscode.window.showWarningMessage('请先选中函数名');
+      if (!editor) return;
+
+      const selection = editor.selection;
+      let word: string | undefined;
+
+      if (!selection.isEmpty) {
+        word = editor.document.getText(selection).trim();
+      } else {
+        const wordRange = editor.document.getWordRangeAtPosition(selection.active);
+        if (wordRange) {
+          word = editor.document.getText(wordRange).trim();
+        }
+      }
+
+      if (!word) {
+        vscode.window.showWarningMessage('请将光标放在函数名上或选中函数名');
         return;
       }
+
       const client = await getClient();
-      searchFunction(client, showFunctionInGraph, selection);
+      searchFunction(client, showFunctionInGraph, word);
     }),
 
     vscode.commands.registerCommand('codeSage.searchVariable', async () => {
