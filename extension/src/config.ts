@@ -90,38 +90,75 @@ export async function selectCoreModules(): Promise<void> {
     return;
   }
 
-  const currentModules = getConfig().coreModules;
+  const cfgKey = vscode.workspace.getConfiguration('codeSage');
+  let currentModules = [...(cfgKey.get<string[]>('coreModules') || [])];
 
-  // Scan top-level directories as candidates
-  let candidates: string[] = [];
-  try {
-    const entries = fs.readdirSync(workspaceRoot, { withFileTypes: true });
-    candidates = entries
-      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
-      .map(e => e.name + '/');
-  } catch {
-    logger.warn('Failed to scan workspace directories');
-  }
+  // Loop: show current list with action items until user confirms
+  while (true) {
+    const items: vscode.QuickPickItem[] = [];
 
-  // Merge with currently selected modules
-  const allModules = [...new Set([...candidates, ...currentModules])].sort();
+    items.push({
+      label: '$(add) 添加模块目录...',
+      description: '浏览项目目录并添加',
+      alwaysShow: true,
+    });
 
-  const items: vscode.QuickPickItem[] = allModules.map(mod => ({
-    label: mod,
-    picked: currentModules.includes(mod),
-    description: currentModules.includes(mod) ? '已选择' : '',
-  }));
+    if (currentModules.length > 0) {
+      items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+      for (const mod of currentModules) {
+        items.push({
+          label: mod,
+          description: '$(trash) 点击移除',
+        });
+      }
+    }
 
-  const selected = await vscode.window.showQuickPick(items, {
-    canPickMany: true,
-    title: 'CodeSage: 选择核心模块',
-    placeHolder: '选择需要分析的核心模块目录（按 Enter 确认）',
-  });
+    items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+    items.push({
+      label: '$(check) 确认完成',
+      description: `当前 ${currentModules.length} 个模块`,
+      alwaysShow: true,
+    });
 
-  if (selected !== undefined) {
-    const modules = selected.map(s => s.label);
-    await vscode.workspace.getConfiguration('codeSage').update('coreModules', modules, true);
-    vscode.window.showInformationMessage(`核心模块已更新: ${modules.join(', ') || '（无）'}`);
-    logger.info('Core modules updated', modules);
+    const pick = await vscode.window.showQuickPick(items, {
+      title: `CodeSage: 核心模块管理（已选 ${currentModules.length} 个）`,
+      placeHolder: '添加/移除核心模块目录，完成后点击确认',
+    });
+
+    if (!pick) return; // cancelled
+
+    if (pick.label === '$(check) 确认完成') {
+      await cfgKey.update('coreModules', currentModules, true);
+      vscode.window.showInformationMessage(
+        `核心模块已更新: ${currentModules.join(', ') || '（无）'}`
+      );
+      logger.info('Core modules updated', currentModules);
+      return;
+    }
+
+    if (pick.label === '$(add) 添加模块目录...') {
+      const uris = await vscode.window.showOpenDialog({
+        defaultUri: vscode.Uri.file(workspaceRoot),
+        canSelectFolders: true,
+        canSelectFiles: false,
+        canSelectMany: true,
+        openLabel: '选择模块目录',
+        title: '选择核心模块目录',
+      });
+      if (uris && uris.length > 0) {
+        for (const uri of uris) {
+          let rel = path.relative(workspaceRoot, uri.fsPath);
+          if (!rel.endsWith('/')) rel += '/';
+          if (!currentModules.includes(rel)) {
+            currentModules.push(rel);
+          }
+        }
+        currentModules.sort();
+      }
+      continue;
+    }
+
+    // Clicked on an existing module → remove it
+    currentModules = currentModules.filter(m => m !== pick.label);
   }
 }
