@@ -93,7 +93,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('codeSage.searchFunction', async () => {
       const client = await getClient();
-      searchFunction(client, showFunctionInGraph);
+      searchFunction(client, searchResultsProvider);
     }),
 
     vscode.commands.registerCommand('codeSage.searchFunctionAtCursor', async () => {
@@ -118,12 +118,12 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const client = await getClient();
-      searchFunction(client, showFunctionInGraph, word);
+      searchFunction(client, searchResultsProvider, word);
     }),
 
     vscode.commands.registerCommand('codeSage.searchVariable', async () => {
       const client = await getClient();
-      searchVariable(client, showVariableInGraph);
+      searchVariable(client, searchResultsProvider);
     }),
 
     vscode.commands.registerCommand('codeSage.openGraph', async () => {
