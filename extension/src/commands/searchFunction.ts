@@ -4,11 +4,12 @@ import { ApiClient, FunctionInfo } from '../apiClient';
 
 export async function searchFunction(
   client: ApiClient,
-  onSelect: (func: FunctionInfo) => void
+  onSelect: (func: FunctionInfo) => void,
+  initialQuery?: string
 ): Promise<void> {
-  logger.info('searchFunction command executed');
+  logger.info('searchFunction command executed', initialQuery ? `query=${initialQuery}` : '');
 
-  const query = await vscode.window.showInputBox({
+  const query = initialQuery || await vscode.window.showInputBox({
     prompt: '输入函数名搜索',
     placeHolder: '例如: schedule, kmalloc, process_data',
   });

@@ -15,16 +15,6 @@ export async function parseProject(client: ApiClient, statusBar?: vscode.StatusB
     return 'error';
   }
 
-  const confirm = await vscode.window.showWarningMessage(
-    '开始解析项目源码？这可能需要较长时间。',
-    { modal: true },
-    '开始'
-  );
-
-  logger.info('Parse confirmation dialog result', confirm || 'dismissed');
-
-  if (confirm !== '开始') return 'cancelled';
-
   const ownStatusBar = !statusBar;
   if (!statusBar) {
     statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);

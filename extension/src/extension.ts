@@ -96,6 +96,17 @@ export async function activate(context: vscode.ExtensionContext) {
       searchFunction(client, showFunctionInGraph);
     }),
 
+    vscode.commands.registerCommand('codeSage.searchFunctionFromSelection', async () => {
+      const editor = vscode.window.activeTextEditor;
+      const selection = editor?.document.getText(editor.selection).trim();
+      if (!selection) {
+        vscode.window.showWarningMessage('请先选中函数名');
+        return;
+      }
+      const client = await getClient();
+      searchFunction(client, showFunctionInGraph, selection);
+    }),
+
     vscode.commands.registerCommand('codeSage.searchVariable', async () => {
       const client = await getClient();
       searchVariable(client, showVariableInGraph);

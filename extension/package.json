@@ -53,8 +53,22 @@
         "command": "codeSage.openLogs",
         "title": "CodeSage: 打开日志",
         "category": "CodeSage"
+      },
+      {
+        "command": "codeSage.searchFunctionFromSelection",
+        "title": "CodeSage: 搜索选中函数",
+        "category": "CodeSage"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codeSage.searchFunctionFromSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@100"
+        }
+      ]
+    },
     "configuration": {
       "title": "CodeSage",
       "properties": {
