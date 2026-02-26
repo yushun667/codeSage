@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as os from 'os';
 import { logger } from './logger';
 import { getConfig, configureProject, selectCoreModules } from './config';
 import { BackendManager } from './backendManager';
@@ -65,17 +67,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('codeSage.parseProject', async () => {
       const client = await getClient();
-      parseStatusBarItem.text = '$(sync~spin) CodeSage: 解析中...';
-      parseStatusBarItem.command = 'codeSage.cancelParse';
-      parseStatusBarItem.tooltip = '点击取消解析';
       try {
         const reason = await parseProject(client, parseStatusBarItem);
         if (reason === 'completed') {
           parseStatusBarItem.text = '$(check) CodeSage: 解析完成';
           parseStatusBarItem.tooltip = '解析已完成，点击重新解析';
         } else if (reason === 'cancelled') {
-          parseStatusBarItem.text = '$(circle-slash) CodeSage: 已取消';
-          parseStatusBarItem.tooltip = '解析已取消，点击重新解析';
+          parseStatusBarItem.text = '$(play) CodeSage: 解析';
+          parseStatusBarItem.tooltip = '点击开始解析项目代码';
         } else {
           parseStatusBarItem.text = '$(error) CodeSage: 解析出错';
           parseStatusBarItem.tooltip = '解析出错，点击重试';
@@ -113,6 +112,29 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('codeSage.showVariableDataFlow', (variable: GlobalVarInfo) => {
       showVariableInGraph(variable);
+    }),
+
+    vscode.commands.registerCommand('codeSage.openLogs', async () => {
+      const logDir = path.join(os.homedir(), '.codesage', 'logs');
+      const items = [
+        { label: '扩展日志 (extension.log)', file: 'extension.log' },
+        { label: '后端日志 (backend.log)', file: 'backend.log' },
+        { label: '分析器日志 (analyzer.log)', file: 'analyzer.log' },
+        { label: '输出面板 (Output Channel)', file: '__output__' },
+      ];
+      const pick = await vscode.window.showQuickPick(items, { title: 'CodeSage: 打开日志' });
+      if (!pick) return;
+      if (pick.file === '__output__') {
+        logger.show();
+      } else {
+        const logPath = vscode.Uri.file(path.join(logDir, pick.file));
+        try {
+          await vscode.workspace.openTextDocument(logPath);
+          await vscode.window.showTextDocument(logPath);
+        } catch {
+          vscode.window.showWarningMessage(`日志文件不存在: ${pick.file}（分析器可能还未运行过）`);
+        }
+      }
     })
   );
 

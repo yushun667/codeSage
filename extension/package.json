@@ -48,6 +48,11 @@
         "command": "codeSage.selectCoreModules",
         "title": "CodeSage: 选择核心模块",
         "category": "CodeSage"
+      },
+      {
+        "command": "codeSage.openLogs",
+        "title": "CodeSage: 打开日志",
+        "category": "CodeSage"
       }
     ],
     "configuration": {

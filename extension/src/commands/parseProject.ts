@@ -33,6 +33,8 @@ export async function parseProject(client: ApiClient, statusBar?: vscode.StatusB
 
     const config = getConfig();
     statusBar.text = '$(sync~spin) CodeSage: 解析中...';
+    (statusBar as { command?: string }).command = 'codeSage.cancelParse';
+    statusBar.tooltip = '点击取消解析';
     statusBar.show();
 
     const reason = await new Promise<ParseDoneReason>((resolve) => {
