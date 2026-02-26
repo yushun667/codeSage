@@ -10,6 +10,7 @@ export interface BackendConfig {
   projectRoot: string;
   coreModules: string[];
   systemReplace: boolean;
+  parseJobs: number;
 }
 
 const DEFAULT_ANALYZER_PATH = path.resolve(__dirname, '../../analyzer/build/code-sage');
@@ -24,6 +25,7 @@ export function loadConfig(overrides: Partial<BackendConfig> = {}): BackendConfi
     projectRoot: process.env.CODESAGE_PROJECT_ROOT || '',
     coreModules: (process.env.CODESAGE_CORE_MODULES || '').split(',').filter(Boolean),
     systemReplace: process.env.CODESAGE_SYSTEM_REPLACE === 'true',
+    parseJobs: parseInt(process.env.CODESAGE_PARSE_JOBS || '0', 10),
     ...overrides,
   };
 

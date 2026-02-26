@@ -12,6 +12,7 @@ export interface CodeSageConfig {
   systemReplace: boolean;
   backendPort: number;
   versionLabel: string;
+  parseJobs: number;
 }
 
 function resolveDefaultAnalyzerPath(): string {
@@ -44,6 +45,7 @@ export function getConfig(): CodeSageConfig {
     systemReplace: cfg.get<boolean>('systemReplace') || false,
     backendPort: cfg.get<number>('backendPort') || 9527,
     versionLabel,
+    parseJobs: cfg.get<number>('parseJobs') || 0,
   };
 
   logger.debug('Config loaded', config);

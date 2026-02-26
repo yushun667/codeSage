@@ -52,9 +52,13 @@ private:
         const clang::tooling::CompilationDatabase& cdb,
         const std::string& module_path);
 
-    // Run ClangTool on given files using the provided compilation database
+    // Run ClangTool on given files (dispatches to parallel or single-threaded)
     AnalyzerStats parseFilesWithDB(clang::tooling::CompilationDatabase& cdb,
                                     const std::vector<std::string>& files);
+
+    // Single-threaded batch parse (used by each worker thread)
+    AnalyzerStats parseBatch(clang::tooling::CompilationDatabase& cdb,
+                              const std::vector<std::string>& files);
 
     Storage& storage_;
     AnalyzerConfig config_;

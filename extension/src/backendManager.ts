@@ -36,6 +36,7 @@ export class BackendManager {
       CODESAGE_PROJECT_ROOT: this.config.projectRoot,
       CODESAGE_CORE_MODULES: this.config.coreModules.join(','),
       CODESAGE_SYSTEM_REPLACE: String(this.config.systemReplace),
+      CODESAGE_PARSE_JOBS: String(this.config.parseJobs),
     };
 
     this.process = spawn('node', [path.join(backendDir, 'dist', 'index.js')], {
@@ -104,6 +105,7 @@ export class BackendManager {
         projectRoot: config.projectRoot,
         coreModules: config.coreModules,
         systemReplace: config.systemReplace,
+        parseJobs: config.parseJobs,
       }).catch(err => {
         logger.warn(`Failed to update backend config: ${err.message}`);
       });

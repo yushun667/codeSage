@@ -83,6 +83,11 @@
           "type": "string",
           "default": "default",
           "description": "当前分析的代码版本标签（如 v5.10、ohos-3.2），不同版本使用独立数据库"
+        },
+        "codeSage.parseJobs": {
+          "type": "number",
+          "default": 0,
+          "description": "并行解析线程数（0 = 自动，使用 CPU核心数-2；最小为 1）"
         }
       }
     },

@@ -3,6 +3,7 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
+#include <thread>
 
 #include "logger.h"
 #include "storage.h"
@@ -25,6 +26,7 @@ void printUsage(const char* prog) {
               << "  --project-root=<path>  Project root directory\n"
               << "  --modules=<m1,m2,...>   Core module paths (comma-separated)\n"
               << "  --system-replace       Replace -I with --isystem for external headers\n"
+              << "  --jobs=<N>             Parallel parse jobs (default: nproc-2, min 1)\n"
               << "  --log-dir=<path>       Log output directory\n\n"
               << "Query subcommands:\n"
               << "  search-functions    --db=<path> --query=<name> [--limit=50]\n"
@@ -90,6 +92,16 @@ int cmdParse(const std::vector<std::string>& args) {
     config.project_root = project_root;
     config.core_modules = splitComma(modules_str);
     config.replace_system_includes = system_replace;
+
+    std::string jobs_str = getArg(args, "--jobs=");
+    if (!jobs_str.empty()) {
+        config.parallel_jobs = std::max(1, std::stoi(jobs_str));
+    } else {
+        int hw = static_cast<int>(std::thread::hardware_concurrency());
+        config.parallel_jobs = std::max(1, hw - 2);
+    }
+    CS_INFO("Parallel jobs: {} (hardware_concurrency={})",
+            config.parallel_jobs, std::thread::hardware_concurrency());
 
     SourceAnalyzer analyzer(storage, config);
     auto stats = analyzer.parseAll();

@@ -81,6 +81,9 @@ export class AnalyzerService extends EventEmitter {
     if (systemReplace) {
       args.push('--system-replace');
     }
+    if (this.config.parseJobs > 0) {
+      args.push(`--jobs=${this.config.parseJobs}`);
+    }
 
     logger.info('Starting parse', { args });
     this.emit('progress', { status: 'running', message: 'Parse started' } as ParseProgress);
@@ -115,8 +118,8 @@ export class AnalyzerService extends EventEmitter {
             totalFiles = parseInt(totalMatch[1], 10);
           }
 
-          // Detect per-file progress: "[1/10] Processing file ..."
-          const fileMatch = trimmed.match(/\[(\d+)\/(\d+)\]\s+Processing\s+file\s+(.*)/);
+          // Detect per-file progress: "[1/10] Processing file ..." or "[1/10] Processed file ..."
+          const fileMatch = trimmed.match(/\[(\d+)\/(\d+)\]\s+Process(?:ing|ed)\s+file\s+(.*)/);
           if (fileMatch) {
             const current = parseInt(fileMatch[1], 10);
             const total = parseInt(fileMatch[2], 10);
