@@ -9,6 +9,9 @@ const execFileAsync = promisify(execFile);
 export interface ParseProgress {
   status: 'running' | 'completed' | 'error';
   message: string;
+  current?: number;
+  total?: number;
+  percent?: number;
   data?: Record<string, unknown>;
 }
 
@@ -94,12 +97,38 @@ export class AnalyzerService extends EventEmitter {
         stdout += data.toString();
       });
 
+      let totalFiles = 0;
+
       this.parseProcess.stderr?.on('data', (data: Buffer) => {
-        const line = data.toString().trim();
-        stderr += line + '\n';
-        if (line) {
-          logger.debug('Parse output', { line });
-          this.emit('progress', { status: 'running', message: line } as ParseProgress);
+        const chunk = data.toString();
+        stderr += chunk;
+        for (const line of chunk.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          logger.debug('Parse output', { line: trimmed });
+
+          const progress: ParseProgress = { status: 'running', message: trimmed };
+
+          // Detect total file count: "N files need parsing"
+          const totalMatch = trimmed.match(/(\d+)\s+files?\s+need\s+pars/);
+          if (totalMatch) {
+            totalFiles = parseInt(totalMatch[1], 10);
+          }
+
+          // Detect per-file progress: "[1/10] Processing file ..."
+          const fileMatch = trimmed.match(/\[(\d+)\/(\d+)\]\s+Processing\s+file\s+(.*)/);
+          if (fileMatch) {
+            const current = parseInt(fileMatch[1], 10);
+            const total = parseInt(fileMatch[2], 10);
+            if (total > totalFiles) totalFiles = total;
+            progress.current = current;
+            progress.total = totalFiles || total;
+            progress.percent = Math.round((current / (totalFiles || total)) * 100);
+            const fileName = fileMatch[3].replace(/\.$/, '').split('/').pop() || fileMatch[3];
+            progress.message = fileName;
+          }
+
+          this.emit('progress', progress);
         }
       });
 

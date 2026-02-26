@@ -44,8 +44,12 @@ export async function parseProject(client: ApiClient, statusBar?: vscode.StatusB
           try {
             const progress = JSON.parse(data.toString());
             if (progress.status === 'running') {
-              statusBar!.text = `$(sync~spin) CodeSage: ${progress.message}`;
-              logger.debug('Parse progress', progress.message);
+              if (progress.percent !== undefined) {
+                statusBar!.text = `$(sync~spin) CodeSage: [${progress.current}/${progress.total}] ${progress.percent}% ${progress.message}`;
+              } else {
+                statusBar!.text = `$(sync~spin) CodeSage: ${progress.message}`;
+              }
+              logger.debug('Parse progress', progress);
             } else if (progress.status === 'completed') {
               statusBar!.text = '$(check) CodeSage: 解析完成';
               const stats = progress.data || {};
