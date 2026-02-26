@@ -9,6 +9,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <set>
 
 #include <clang/ASTMatchers/ASTMatchers.h>
 #include <clang/ASTMatchers/ASTMatchFinder.h>
@@ -107,14 +108,31 @@ AnalyzerStats SourceAnalyzer::parseAll() {
     auto all_files = cdb->getAllFiles();
     CS_INFO("Compilation database contains {} files", all_files.size());
 
+    // If core_modules specified, filter to only module files
+    std::vector<std::string> target_files;
+    if (!config_.core_modules.empty()) {
+        std::set<std::string> module_file_set;
+        for (const auto& mod : config_.core_modules) {
+            auto mfiles = getModuleFiles(*cdb, mod);
+            module_file_set.insert(mfiles.begin(), mfiles.end());
+            CS_INFO("Module '{}' matched {} files", mod, mfiles.size());
+        }
+        target_files.assign(module_file_set.begin(), module_file_set.end());
+        CS_INFO("Core modules total: {} files (out of {} in compile_db)",
+                target_files.size(), all_files.size());
+    } else {
+        target_files = all_files;
+    }
+
     // Filter already parsed files
     std::vector<std::string> unparsed;
-    for (const auto& f : all_files) {
+    for (const auto& f : target_files) {
         if (!storage_.isFileParsed(f)) {
             unparsed.push_back(f);
         }
     }
-    CS_INFO("{} files need parsing ({} already parsed)", unparsed.size(), all_files.size() - unparsed.size());
+    CS_INFO("{} files need parsing ({} already parsed)",
+            unparsed.size(), target_files.size() - unparsed.size());
 
     if (unparsed.empty()) {
         CS_INFO("All files already parsed, nothing to do");
