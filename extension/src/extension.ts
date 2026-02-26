@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { logger } from './logger';
-import { getConfig, configureProject } from './config';
+import { getConfig, configureProject, selectCoreModules } from './config';
 import { BackendManager } from './backendManager';
 import { GraphPanel } from './views/graphPanel';
 import { SearchResultsProvider } from './views/searchResultsProvider';
@@ -11,6 +11,7 @@ import { FunctionInfo, GlobalVarInfo } from './apiClient';
 
 let backendManager: BackendManager;
 const searchResultsProvider = new SearchResultsProvider();
+let parseStatusBarItem: vscode.StatusBarItem;
 
 export async function activate(context: vscode.ExtensionContext) {
   logger.info('CodeSage extension activating');
@@ -18,10 +19,16 @@ export async function activate(context: vscode.ExtensionContext) {
   const config = getConfig();
   backendManager = new BackendManager(config);
 
-  // Register tree view
   vscode.window.registerTreeDataProvider('codesage.searchResults', searchResultsProvider);
 
-  // Helper to get API client (starts backend if needed)
+  // --- Status bar: parse button ---
+  parseStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 200);
+  parseStatusBarItem.command = 'codeSage.parseProject';
+  parseStatusBarItem.text = '$(play) CodeSage: 解析';
+  parseStatusBarItem.tooltip = '点击开始解析项目代码';
+  parseStatusBarItem.show();
+  context.subscriptions.push(parseStatusBarItem);
+
   async function getClient() {
     try {
       return await backendManager.start();
@@ -33,7 +40,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  // Helper to open graph panel with function
   function showFunctionInGraph(func: FunctionInfo) {
     getClient().then(client => {
       const panel = GraphPanel.createOrShow(context.extensionUri, client);
@@ -41,7 +47,6 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  // Helper to open graph panel with variable
   function showVariableInGraph(variable: GlobalVarInfo) {
     getClient().then(client => {
       const panel = GraphPanel.createOrShow(context.extensionUri, client);
@@ -49,15 +54,27 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  // Register commands
   context.subscriptions.push(
     vscode.commands.registerCommand('codeSage.configureProject', () => {
       configureProject();
     }),
 
+    vscode.commands.registerCommand('codeSage.selectCoreModules', () => {
+      selectCoreModules();
+    }),
+
     vscode.commands.registerCommand('codeSage.parseProject', async () => {
       const client = await getClient();
-      parseProject(client);
+      parseStatusBarItem.text = '$(sync~spin) CodeSage: 解析中...';
+      parseStatusBarItem.command = 'codeSage.cancelParse';
+      parseStatusBarItem.tooltip = '点击取消解析';
+      try {
+        await parseProject(client, parseStatusBarItem);
+      } finally {
+        parseStatusBarItem.text = '$(play) CodeSage: 解析';
+        parseStatusBarItem.command = 'codeSage.parseProject';
+        parseStatusBarItem.tooltip = '点击开始解析项目代码';
+      }
     }),
 
     vscode.commands.registerCommand('codeSage.cancelParse', async () => {
@@ -89,7 +106,6 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Watch for config changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('codeSage')) {
