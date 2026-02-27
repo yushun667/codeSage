@@ -62,19 +62,26 @@ function getModuleColor(module: string): string {
   return `hsl(${hue}, 50%, 45%)`;
 }
 
+const EXTERNAL_COLOR = '#6c5ce7';
+
 export function convertCallGraph(
   data: CallGraphData,
   rootUsr: string,
 ): { nodes: CyNodeData[]; edges: CyEdgeData[] } {
   const nodes: CyNodeData[] = data.nodes.map((n) => {
+    const isExternal = !n.file || n.line === 0;
     const fileName = n.file.split('/').pop() || n.file;
+    const label = isExternal ? n.name : `${n.name}\n${fileName}:${n.line}`;
+    const color = n.usr === rootUsr ? '#e74c3c'
+                : isExternal ? EXTERNAL_COLOR
+                : getModuleColor(n.module);
     return {
       id: n.usr,
-      label: `${n.name}\n${fileName}:${n.line}`,
+      label,
       file: n.file,
       line: n.line,
       module: n.module,
-      color: n.usr === rootUsr ? '#e74c3c' : getModuleColor(n.module),
+      color,
       nodeType: 'function' as const,
       isRoot: n.usr === rootUsr,
       signature: n.signature || '',

@@ -91,14 +91,50 @@ std::optional<FunctionInfo> QueryEngine::getFunctionInfo(const std::string& usr)
     return func;
 }
 
+static std::string extractNameFromUSR(const std::string& usr) {
+    std::string funcName;
+    std::string className;
+    bool inTemplateParam = false;
+
+    size_t pos = 0;
+    while (pos + 2 < usr.size()) {
+        if (usr[pos] == '#' && pos + 1 < usr.size() && usr[pos + 1] == '$') {
+            inTemplateParam = true;
+            pos += 2;
+            continue;
+        }
+        if (usr[pos] == '@' && pos + 2 < usr.size() && usr[pos + 2] == '@') {
+            char tag = usr[pos + 1];
+            pos += 3;
+            size_t end = pos;
+            while (end < usr.size() && usr[end] != '@' && usr[end] != '#'
+                   && usr[end] != '<' && usr[end] != '>')
+                end++;
+            std::string segment = usr.substr(pos, end - pos);
+            if (tag == 'F') {
+                funcName = segment;
+                inTemplateParam = false;
+            } else if (tag == 'S' && !inTemplateParam) {
+                className = segment;
+            }
+            pos = end;
+        } else {
+            pos++;
+        }
+    }
+
+    if (funcName.empty()) return usr;
+    return className.empty() ? funcName : className + "::" + funcName;
+}
+
 FunctionInfo QueryEngine::getOrLoadFunction(const std::string& usr) {
     auto func = getFunctionInfo(usr);
     if (func) return *func;
 
-    FunctionInfo empty;
-    empty.set_usr(usr);
-    empty.set_name("(unknown)");
-    return empty;
+    FunctionInfo stub;
+    stub.set_usr(usr);
+    stub.set_name(extractNameFromUSR(usr));
+    return stub;
 }
 
 void QueryEngine::collectForward(const std::string& usr, int depth,

@@ -101,6 +101,14 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
     style: { 'border-width': 3, 'font-weight': 'bold' },
   },
   {
+    selector: 'node[!file]',
+    style: {
+      'background-color': '#2d2640',
+      'font-style': 'italic' as any,
+      'border-style': 'dashed' as any,
+    } as any,
+  },
+  {
     selector: 'node:selected',
     style: { 'border-color': '#007acc', 'border-width': 3, 'background-color': '#1a3050' },
   },
@@ -559,10 +567,12 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
                 </div>
               </>
             )}
-            <div className="context-item" onClick={() => {
-              if (contextMenu.nodeData) onOpenSource(contextMenu.nodeData.file, contextMenu.nodeData.line);
-              closeMenu();
-            }}>查看源码</div>
+            {contextMenu.nodeData.file && contextMenu.nodeData.line > 0 && (
+              <div className="context-item" onClick={() => {
+                if (contextMenu.nodeData) onOpenSource(contextMenu.nodeData.file, contextMenu.nodeData.line);
+                closeMenu();
+              }}>查看源码</div>
+            )}
             <div className="context-item" onClick={() => {
               const cy = cyRef.current;
               if (cy) {
