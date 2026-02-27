@@ -353,4 +353,66 @@ std::vector<std::string> DataFlowAnalyzer::findDataFlowPath(
     return {};
 }
 
+size_t DataFlowAnalyzer::resolveCallbackEdges() {
+    CS_INFO("Resolving cross-function callback edges...");
+
+    auto all_passes = storage_.getAllCallbackPasses();
+    CS_INFO("Loaded {} callback pass records", all_passes.size());
+
+    if (all_passes.empty()) return 0;
+
+    // For each callee that receives a callback parameter, check if it has
+    // indirect calls through that parameter. If so, create a "callback" edge
+    // from the callee to the actual callback function.
+    //
+    // Pattern: A calls B(foo) where foo is a function pointer
+    //   => B internally calls param[i] => we create edge B -> foo (type="callback")
+
+    // Group passes by callee_usr
+    std::unordered_map<std::string, std::vector<const CallbackPass*>> passes_by_callee;
+    for (const auto& pass : all_passes) {
+        passes_by_callee[pass.callee_usr()].push_back(&pass);
+    }
+
+    // Load forward edges if not already loaded
+    if (forward_edges_.empty()) loadCallGraph();
+
+    size_t resolved = 0;
+
+    for (const auto& [callee_usr, passes] : passes_by_callee) {
+        // Get existing forward edges from this callee to see if it has
+        // unresolved indirect calls (no target) or param-based calls
+        auto edges = storage_.getForwardEdges(callee_usr);
+
+        for (const auto* pass : passes) {
+            // Create a callback edge: callee_usr -> callback_usr
+            CallEdge edge;
+            edge.set_caller_usr(pass->callee_usr());
+            edge.set_callee_usr(pass->callback_usr());
+            edge.set_edge_type("callback");
+            edge.set_call_file(pass->call_file());
+            edge.set_call_line(pass->call_line());
+
+            // Check for duplicate
+            bool dup = false;
+            for (const auto& e : edges) {
+                if (e.callee_usr() == pass->callback_usr()) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (dup) continue;
+
+            storage_.putCallEdge(edge);
+            resolved++;
+            CS_DEBUG("Resolved callback edge: {} -> {} (via param {} from {})",
+                     pass->callee_usr(), pass->callback_usr(),
+                     pass->param_index(), pass->caller_usr());
+        }
+    }
+
+    CS_INFO("Resolved {} callback edges", resolved);
+    return resolved;
+}
+
 }  // namespace codesage

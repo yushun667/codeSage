@@ -20,6 +20,16 @@ message CallEdge {
   string call_file = 3;
   int32 call_line = 4;
   int32 call_column = 5;
+  string edge_type = 6;  // "direct", "indirect", "callback"
+}
+
+message CallbackPass {
+  string caller_usr = 1;   // function that passes the callback
+  string callee_usr = 2;   // function that receives the callback
+  int32 param_index = 3;   // parameter position (0-based)
+  string callback_usr = 4; // the function being passed as callback
+  string call_file = 5;
+  int32 call_line = 6;
 }
 
 message GlobalVarInfo {

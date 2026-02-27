@@ -13,6 +13,7 @@
 #include <llvm/ADT/SmallString.h>
 
 #include <deque>
+#include <map>
 #include <set>
 
 using namespace clang;
@@ -72,6 +73,107 @@ public:
         if (candidate)
             refs.push_back({candidate, ume->getBeginLoc()});
         return true;
+    }
+};
+
+static bool isFuncPtrType(QualType qt) {
+    qt = qt.getNonReferenceType().getCanonicalType();
+    if (auto* pt = qt->getAs<PointerType>())
+        return pt->getPointeeType()->isFunctionType();
+    if (qt->isFunctionType())
+        return true;
+    return false;
+}
+
+static const FunctionDecl* extractFuncFromExpr(const Expr* e) {
+    if (!e) return nullptr;
+    e = e->IgnoreImplicit();
+    if (const auto* uo = dyn_cast<UnaryOperator>(e)) {
+        if (uo->getOpcode() == UO_AddrOf)
+            e = uo->getSubExpr()->IgnoreImplicit();
+    }
+    if (const auto* dre = dyn_cast<DeclRefExpr>(e))
+        return dyn_cast<FunctionDecl>(dre->getDecl());
+    return nullptr;
+}
+
+// Collects function-pointer assignments and indirect calls within a function body.
+class FuncPtrAnalysisVisitor : public RecursiveASTVisitor<FuncPtrAnalysisVisitor> {
+public:
+    // fp variable (VarDecl*) -> list of FunctionDecls assigned to it
+    std::map<const VarDecl*, std::vector<const FunctionDecl*>> fp_assignments;
+
+    struct IndirectCallInfo {
+        const CallExpr* call;
+        const VarDecl* var;        // non-null if callee is a local variable
+        const FieldDecl* field;    // non-null if callee is a struct member
+    };
+    std::vector<IndirectCallInfo> indirect_calls;
+
+    struct CallbackPassInfo {
+        const CallExpr* call;       // the direct call expression
+        const FunctionDecl* callee; // the function being called
+        unsigned param_index;       // parameter position
+        const FunctionDecl* callback_func; // function being passed
+        SourceLocation loc;
+    };
+    std::vector<CallbackPassInfo> callback_passes;
+
+    bool VisitVarDecl(VarDecl* vd) {
+        if (!isFuncPtrType(vd->getType())) return true;
+        if (!vd->hasInit()) return true;
+        if (auto* fd = extractFuncFromExpr(vd->getInit()))
+            fp_assignments[vd].push_back(fd);
+        return true;
+    }
+
+    bool VisitBinaryOperator(BinaryOperator* bo) {
+        if (bo->getOpcode() != BO_Assign) return true;
+        auto* lhs = bo->getLHS()->IgnoreImplicit();
+        if (auto* dre = dyn_cast<DeclRefExpr>(lhs)) {
+            if (auto* vd = dyn_cast<VarDecl>(dre->getDecl())) {
+                if (isFuncPtrType(vd->getType())) {
+                    if (auto* fd = extractFuncFromExpr(bo->getRHS()))
+                        fp_assignments[vd].push_back(fd);
+                }
+            }
+        }
+        return true;
+    }
+
+    bool VisitCallExpr(CallExpr* ce) {
+        if (ce->getDirectCallee()) {
+            checkCallbackArgs(ce);
+            return true;
+        }
+
+        auto* callee_expr = ce->getCallee();
+        if (!callee_expr) return true;
+        callee_expr = callee_expr->IgnoreImpCasts();
+
+        if (auto* dre = dyn_cast<DeclRefExpr>(callee_expr)) {
+            if (auto* vd = dyn_cast<VarDecl>(dre->getDecl())) {
+                indirect_calls.push_back({ce, vd, nullptr});
+            }
+        } else if (auto* me = dyn_cast<MemberExpr>(callee_expr)) {
+            if (auto* fd_member = dyn_cast<FieldDecl>(me->getMemberDecl())) {
+                indirect_calls.push_back({ce, nullptr, fd_member});
+            }
+        }
+        return true;
+    }
+
+private:
+    void checkCallbackArgs(CallExpr* ce) {
+        auto* callee = ce->getDirectCallee();
+        if (!callee) return;
+        for (unsigned i = 0; i < ce->getNumArgs(); ++i) {
+            if (i >= callee->getNumParams()) break;
+            if (!isFuncPtrType(callee->getParamDecl(i)->getType())) continue;
+            if (auto* cb = extractFuncFromExpr(ce->getArg(i))) {
+                callback_passes.push_back({ce, callee, i, cb, ce->getBeginLoc()});
+            }
+        }
     }
 };
 
@@ -183,6 +285,7 @@ void FunctionDefCallback::run(const MatchFinder::MatchResult& result) {
     }
 
     if (call_cb_ && fd->hasBody()) {
+        call_cb_->analyzeIndirectCalls(*result.Context, sm, fd);
         call_cb_->collectReferencesFromBody(sm, fd);
     }
 }
@@ -241,11 +344,59 @@ void CallExprCallback::run(const MatchFinder::MatchResult& result) {
     }
 }
 
+void CallExprCallback::analyzeIndirectCalls(ASTContext& ctx, SourceManager& sm,
+                                             const FunctionDecl* caller) {
+    if (!caller || !caller->hasBody()) return;
+    if (shouldSkipLocation(sm, caller->getLocation())) return;
+
+    std::string caller_usr = getUSR(caller);
+    if (caller_usr.empty()) return;
+
+    FuncPtrAnalysisVisitor visitor;
+    visitor.TraverseStmt(caller->getBody());
+
+    // Resolve indirect calls via local variable assignments
+    for (const auto& ic : visitor.indirect_calls) {
+        if (!ic.var) continue;
+        auto it = visitor.fp_assignments.find(ic.var);
+        if (it == visitor.fp_assignments.end()) continue;
+
+        for (const auto* target : it->second) {
+            if (storeEdgeDirectly(sm, caller, target,
+                                  ic.call->getBeginLoc(), "indirect"))
+                indirect_count_++;
+        }
+    }
+
+    // Record callback passes: function passed as argument to another function
+    for (const auto& cp : visitor.callback_passes) {
+        auto callee_usr = getUSR(cp.callee);
+        auto cb_usr = getUSR(cp.callback_func);
+        if (callee_usr.empty() || cb_usr.empty()) continue;
+
+        auto ploc = sm.getPresumedLoc(cp.loc);
+
+        CallbackPass pass;
+        pass.set_caller_usr(caller_usr);
+        pass.set_callee_usr(callee_usr);
+        pass.set_param_index(cp.param_index);
+        pass.set_callback_usr(cb_usr);
+        if (ploc.isValid()) {
+            pass.set_call_file(ploc.getFilename());
+            pass.set_call_line(ploc.getLine());
+        }
+
+        storage_.putCallbackPass(pass);
+        callback_pass_count_++;
+    }
+}
+
 template <typename ExprT>
 bool CallExprCallback::findCallerAndStore(ASTContext& ctx, SourceManager& sm,
                                           const ExprT& expr,
                                           const FunctionDecl* callee_decl,
-                                          SourceLocation call_loc) {
+                                          SourceLocation call_loc,
+                                          const std::string& edge_type) {
     if (!call_loc.isValid()) return false;
 
     if (shouldSkipLocation(sm, call_loc)) {
@@ -256,7 +407,6 @@ bool CallExprCallback::findCallerAndStore(ASTContext& ctx, SourceManager& sm,
         return false;
     }
 
-    // BFS walk up AST parents to find enclosing FunctionDecl, with visited check
     const FunctionDecl* caller_decl = nullptr;
     std::deque<clang::DynTypedNode> worklist;
     std::set<const void*> visited;
@@ -313,6 +463,7 @@ bool CallExprCallback::findCallerAndStore(ASTContext& ctx, SourceManager& sm,
     CallEdge edge;
     edge.set_caller_usr(caller_usr);
     edge.set_callee_usr(callee_usr);
+    edge.set_edge_type(edge_type);
     if (ploc.isValid()) {
         edge.set_call_file(ploc.getFilename());
         edge.set_call_line(ploc.getLine());
@@ -344,7 +495,8 @@ void CallExprCallback::collectReferencesFromBody(SourceManager& sm,
 bool CallExprCallback::storeEdgeDirectly(SourceManager& sm,
                                           const FunctionDecl* caller,
                                           const FunctionDecl* callee,
-                                          SourceLocation ref_loc) {
+                                          SourceLocation ref_loc,
+                                          const std::string& edge_type) {
     if (!ref_loc.isValid()) return false;
     if (shouldSkipLocation(sm, ref_loc)) return false;
     if (shouldSkipLocation(sm, caller->getLocation())) return false;
@@ -362,6 +514,7 @@ bool CallExprCallback::storeEdgeDirectly(SourceManager& sm,
     CallEdge edge;
     edge.set_caller_usr(caller_usr);
     edge.set_callee_usr(callee_usr);
+    edge.set_edge_type(edge_type);
     if (ploc.isValid()) {
         edge.set_call_file(ploc.getFilename());
         edge.set_call_line(ploc.getLine());

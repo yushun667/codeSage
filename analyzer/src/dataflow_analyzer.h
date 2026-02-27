@@ -41,6 +41,9 @@ public:
         const std::string& to_func_usr,
         const std::string& var_usr);
 
+    // Post-processing: resolve cross-function callback edges
+    size_t resolveCallbackEdges();
+
     const std::unordered_map<std::string, SideEffectSummary>& getSummaries() const {
         return summaries_;
     }

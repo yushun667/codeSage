@@ -106,9 +106,14 @@ int cmdParse(const std::vector<std::string>& args) {
     SourceAnalyzer analyzer(storage, config);
     auto stats = analyzer.parseAll();
 
+    // Post-processing: resolve callback edges
+    CS_INFO("Running callback edge resolution...");
+    DataFlowAnalyzer dataflow(storage);
+    size_t callback_edges = dataflow.resolveCallbackEdges();
+    CS_INFO("Resolved {} callback edges", callback_edges);
+
     // Run dataflow analysis
     CS_INFO("Running dataflow analysis...");
-    DataFlowAnalyzer dataflow(storage);
     dataflow.computeSideEffects();
     dataflow.persistSummaries();
 

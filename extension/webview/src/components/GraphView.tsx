@@ -138,6 +138,15 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
     style: { 'line-color': 'data(color)', 'target-arrow-color': 'data(color)' },
   },
   {
+    selector: 'edge[edgeType="indirect"], edge[edgeType="callback"]',
+    style: {
+      'line-style': 'dashed',
+      'line-dash-pattern': [6, 3],
+      'line-color': '#e67e22',
+      'target-arrow-color': '#e67e22',
+    } as any,
+  },
+  {
     selector: 'edge:selected',
     style: { 'line-color': '#007acc', 'target-arrow-color': '#007acc', 'width': 2.5 },
   },
@@ -385,6 +394,32 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         });
       });
 
+      /* ── Edge hover tooltip ── */
+      const edgeTip = document.createElement('div');
+      Object.assign(edgeTip.style, {
+        position: 'fixed', padding: '4px 8px', background: '#1e1e1e',
+        color: '#d4d4d4', border: '1px solid #555', borderRadius: '4px',
+        fontSize: '11px', pointerEvents: 'none', display: 'none', zIndex: '9999',
+      });
+      document.body.appendChild(edgeTip);
+
+      cy.on('mouseover', 'edge', (event: EventObject) => {
+        const et = event.target.data('edgeType');
+        if (et === 'indirect' || et === 'callback') {
+          const label = et === 'indirect' ? '间接调用' : '回调调用';
+          edgeTip.textContent = label;
+          edgeTip.style.display = 'block';
+        }
+      });
+      cy.on('mousemove', 'edge', (event: EventObject) => {
+        const me = event.originalEvent as MouseEvent;
+        edgeTip.style.left = `${me.clientX + 12}px`;
+        edgeTip.style.top = `${me.clientY + 12}px`;
+      });
+      cy.on('mouseout', 'edge', () => {
+        edgeTip.style.display = 'none';
+      });
+
       /* ── Track drag for undo ── */
       cy.on('grab', 'node', () => {
         const grabbed = cy.nodes(':grabbed, :selected');
@@ -406,6 +441,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         container.removeEventListener('mouseup', onMouseUp);
         container.removeEventListener('wheel', onWheel);
         boxDiv.remove();
+        edgeTip.remove();
         cy.destroy();
         cyRef.current = null;
       };

@@ -14,6 +14,7 @@ export interface CallGraphData {
     callee_usr: string;
     call_file?: string;
     call_line?: number;
+    edge_type?: string;
   }>;
 }
 
@@ -91,11 +92,16 @@ export function convertCallGraph(
   const nodeSet = new Set(data.nodes.map(n => n.usr));
   const edges: CyEdgeData[] = data.edges
     .filter(e => nodeSet.has(e.caller_usr) && nodeSet.has(e.callee_usr))
-    .map((e) => ({
-      source: e.caller_usr,
-      target: e.callee_usr,
-      edgeType: 'call',
-    }));
+    .map((e) => {
+      const et = e.edge_type || 'direct';
+      const isIndirect = et === 'indirect' || et === 'callback';
+      return {
+        source: e.caller_usr,
+        target: e.callee_usr,
+        edgeType: et,
+        color: isIndirect ? '#e67e22' : undefined,
+      };
+    });
 
   return { nodes, edges };
 }

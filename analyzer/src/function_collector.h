@@ -23,14 +23,17 @@ public:
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult& result) override;
 
-    // Traverse function body with RecursiveASTVisitor to find function
-    // references that may not produce CallExpr nodes (e.g. inside RecoveryExpr)
     void collectReferencesFromBody(clang::SourceManager& sm,
                                    const clang::FunctionDecl* caller);
+
+    void analyzeIndirectCalls(clang::ASTContext& ctx, clang::SourceManager& sm,
+                              const clang::FunctionDecl* caller);
 
     size_t getCollectedCount() const { return collected_count_; }
     size_t getSkippedCount() const { return skipped_count_; }
     size_t getRecoveredCount() const { return recovered_count_; }
+    size_t getIndirectCount() const { return indirect_count_; }
+    size_t getCallbackPassCount() const { return callback_pass_count_; }
 
 private:
     std::string getUSR(const clang::Decl* decl);
@@ -39,12 +42,14 @@ private:
     bool findCallerAndStore(clang::ASTContext& ctx, clang::SourceManager& sm,
                             const ExprT& expr,
                             const clang::FunctionDecl* callee_decl,
-                            clang::SourceLocation call_loc);
+                            clang::SourceLocation call_loc,
+                            const std::string& edge_type = "direct");
 
     bool storeEdgeDirectly(clang::SourceManager& sm,
                            const clang::FunctionDecl* caller,
                            const clang::FunctionDecl* callee,
-                           clang::SourceLocation ref_loc);
+                           clang::SourceLocation ref_loc,
+                           const std::string& edge_type = "direct");
 
     bool shouldSkipLocation(clang::SourceManager& sm, clang::SourceLocation loc) const;
 
@@ -54,6 +59,8 @@ private:
     size_t collected_count_ = 0;
     size_t skipped_count_ = 0;
     size_t recovered_count_ = 0;
+    size_t indirect_count_ = 0;
+    size_t callback_pass_count_ = 0;
 };
 
 class FunctionDefCallback : public clang::ast_matchers::MatchFinder::MatchCallback {

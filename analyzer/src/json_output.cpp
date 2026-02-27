@@ -38,6 +38,9 @@ json callEdgeToJson(const CallEdge& edge) {
     j["call_file"] = edge.call_file();
     j["call_line"] = edge.call_line();
     j["call_column"] = edge.call_column();
+    if (!edge.edge_type().empty()) {
+        j["edge_type"] = edge.edge_type();
+    }
     return j;
 }
 

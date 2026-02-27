@@ -49,6 +49,18 @@ std::string KeyBuilder::metaKey(const std::string& key) {
     return "meta:" + key;
 }
 
+std::string KeyBuilder::cbPassKey(const std::string& callee_usr,
+                                   const std::string& caller_usr,
+                                   int param_index,
+                                   const std::string& callback_usr) {
+    return "cbpass:" + callee_usr + ":" + caller_usr + ":"
+           + std::to_string(param_index) + ":" + callback_usr;
+}
+
+std::string KeyBuilder::cbPassPrefix(const std::string& callee_usr) {
+    return "cbpass:" + callee_usr + ":";
+}
+
 std::string KeyBuilder::fwdEdgePrefix(const std::string& caller) {
     return "edge:fwd:" + caller + ":";
 }
@@ -245,6 +257,47 @@ std::vector<CallEdge> Storage::getBackwardEdges(const std::string& callee_usr) {
     });
 
     return edges;
+}
+
+bool Storage::putCallbackPass(const CallbackPass& pass) {
+    CS_DEBUG("putCallbackPass: {} passes {} to {} param {}",
+             pass.caller_usr(), pass.callback_usr(),
+             pass.callee_usr(), pass.param_index());
+    std::string data;
+    if (!pass.SerializeToString(&data)) {
+        CS_ERROR("Failed to serialize CallbackPass");
+        return false;
+    }
+
+    std::string key = KeyBuilder::cbPassKey(
+        pass.callee_usr(), pass.caller_usr(),
+        pass.param_index(), pass.callback_usr());
+    return put(key, data);
+}
+
+std::vector<CallbackPass> Storage::getCallbackPassesByCallee(const std::string& callee_usr) {
+    std::vector<CallbackPass> passes;
+    std::string prefix = KeyBuilder::cbPassPrefix(callee_usr);
+    iterateWithPrefix(prefix, [&](const std::string&, const std::string& value) -> bool {
+        CallbackPass pass;
+        if (pass.ParseFromString(value)) {
+            passes.push_back(pass);
+        }
+        return true;
+    });
+    return passes;
+}
+
+std::vector<CallbackPass> Storage::getAllCallbackPasses() {
+    std::vector<CallbackPass> passes;
+    iterateWithPrefix("cbpass:", [&](const std::string&, const std::string& value) -> bool {
+        CallbackPass pass;
+        if (pass.ParseFromString(value)) {
+            passes.push_back(pass);
+        }
+        return true;
+    });
+    return passes;
 }
 
 // ---------- Global variable operations ----------

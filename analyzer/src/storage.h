@@ -25,6 +25,10 @@ struct KeyBuilder {
     static std::string parsedFileKey(const std::string& filepath);
     static std::string metaKey(const std::string& key);
 
+    static std::string cbPassKey(const std::string& callee_usr, const std::string& caller_usr,
+                                  int param_index, const std::string& callback_usr);
+    static std::string cbPassPrefix(const std::string& callee_usr);
+
     static std::string fwdEdgePrefix(const std::string& caller);
     static std::string bwdEdgePrefix(const std::string& callee);
     static std::string accessPrefixByFunc(const std::string& func_usr);
@@ -51,6 +55,11 @@ public:
     bool putCallEdge(const CallEdge& edge);
     std::vector<CallEdge> getForwardEdges(const std::string& caller_usr);
     std::vector<CallEdge> getBackwardEdges(const std::string& callee_usr);
+
+    // Callback pass tracking (function pointer parameter passing)
+    bool putCallbackPass(const CallbackPass& pass);
+    std::vector<CallbackPass> getCallbackPassesByCallee(const std::string& callee_usr);
+    std::vector<CallbackPass> getAllCallbackPasses();
 
     // Global variable operations
     bool putGlobalVar(const GlobalVarInfo& var);
