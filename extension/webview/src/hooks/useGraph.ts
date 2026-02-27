@@ -88,7 +88,7 @@ export function useGraph() {
         label: `${node.name}\n${fileName}:${node.line}`,
         x: radius * Math.cos(angle),
         y: radius * Math.sin(angle),
-        size: node.usr === rootUsr ? 1.0 : 0.8,
+        size: node.usr === rootUsr ? 1 : 0.8,
         color: node.usr === rootUsr ? '#e74c3c' : getModuleColor(node.module),
         nodeType: 'function' as const,
         file: node.file,
@@ -104,7 +104,7 @@ export function useGraph() {
       if (!graph.hasEdge(edgeId) && graph.hasNode(edge.caller_usr) && graph.hasNode(edge.callee_usr)) {
         graph.addEdgeWithKey(edgeId, edge.caller_usr, edge.callee_usr, {
           color: '#999',
-          size: 0.08,
+          size: 0.3,
           edgeType: 'call',
         });
       }
@@ -129,7 +129,7 @@ export function useGraph() {
         label: `${node.name}\n${fileName}:${node.line}`,
         x: 0,
         y: 0,
-        size: 1.0,
+        size: 1,
         color: '#9b59b6',
         nodeType: 'variable' as const,
         file: node.file,
@@ -166,7 +166,7 @@ export function useGraph() {
                           edge.type === 'direct_read' ? '#3498db' : '#2ecc71';
         graph.addEdgeWithKey(edgeId, edge.from_usr, edge.to_usr, {
           color: edgeColor,
-          size: edge.type === 'call' ? 0.08 : 0.12,
+          size: edge.type === 'call' ? 0.2 : 0.4,
           edgeType: edge.type,
           varUsr: edge.var_usr,
         });
@@ -204,7 +204,7 @@ export function useGraph() {
       if (!graph.hasEdge(edgeId) && graph.hasNode(edge.caller_usr) && graph.hasNode(edge.callee_usr)) {
         graph.addEdgeWithKey(edgeId, edge.caller_usr, edge.callee_usr, {
           color: '#999',
-          size: 0.08,
+          size: 0.3,
           edgeType: 'call',
         });
       }

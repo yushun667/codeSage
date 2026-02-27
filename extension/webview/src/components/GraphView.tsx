@@ -25,23 +25,27 @@ interface GraphViewProps {
   sigmaRef: React.MutableRefObject<Sigma | null>;
 }
 
+/**
+ * Label renderer: draws a rectangular box with scaled multi-line text.
+ * Font size is derived from data.size so labels scale with camera zoom
+ * when itemSizesReference is "positions".
+ */
 function drawRectLabel(
   context: CanvasRenderingContext2D,
   data: PartialButFor<NodeDisplayData, 'x' | 'y' | 'size' | 'label' | 'color'>,
-  settings: Settings,
+  _settings: Settings,
 ): void {
   if (!data.label) return;
 
-  const scale = Math.max(data.size / 10, 0.6);
-  const fontSize = Math.max(Math.round(13 * scale), 8);
-  const font = settings.labelFont || 'sans-serif';
+  const scale = data.size / 15;
+  const firstFontSize = Math.max(6, Math.round(13 * scale));
+  const secondFontSize = Math.max(5, Math.round(11 * scale));
+  const padding = Math.max(3, Math.round(6 * scale));
+  const lineGap = Math.max(1, Math.round(3 * scale));
+  const font = 'sans-serif';
   const lines = data.label.split('\n');
 
-  const padding = Math.max(Math.round(6 * scale), 3);
-  const lineGap = Math.max(Math.round(3 * scale), 2);
-  const secondFontSize = Math.max(fontSize - 2, 7);
-
-  context.font = `bold ${fontSize}px ${font}`;
+  context.font = `bold ${firstFontSize}px ${font}`;
   let maxWidth = context.measureText(lines[0]).width;
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
@@ -51,54 +55,53 @@ function drawRectLabel(
 
   const boxWidth = maxWidth + padding * 2;
   const totalTextHeight = lines.length > 1
-    ? fontSize + lineGap + secondFontSize
-    : fontSize;
+    ? firstFontSize + lineGap + secondFontSize
+    : firstFontSize;
   const boxHeight = totalTextHeight + padding * 2;
 
   const cx = data.x;
   const cy = data.y;
   const x = cx - boxWidth / 2;
   const y = cy - boxHeight / 2;
+  const r = Math.max(2, Math.round(4 * scale));
 
   context.fillStyle = data.highlighted ? '#2a3a4a' : '#1e2a36';
-  context.strokeStyle = (data as any).borderColor || '#555';
-  context.lineWidth = data.highlighted ? 2.5 : 1.5;
+  context.strokeStyle = data.color || '#555';
+  context.lineWidth = data.highlighted ? 2 : 1;
   context.beginPath();
-  roundRect(context, x, y, boxWidth, boxHeight, 4);
+  roundRect(context, x, y, boxWidth, boxHeight, r);
   context.fill();
   context.stroke();
 
   context.textAlign = 'center';
   context.textBaseline = 'top';
-
-  context.font = `bold ${fontSize}px ${font}`;
+  context.font = `bold ${firstFontSize}px ${font}`;
   context.fillStyle = '#e0e0e0';
   context.fillText(lines[0], cx, y + padding);
 
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
     context.fillStyle = '#8899aa';
-    context.fillText(lines[1], cx, y + padding + fontSize + lineGap);
+    context.fillText(lines[1], cx, y + padding + firstFontSize + lineGap);
   }
 }
 
 function drawRectHover(
   context: CanvasRenderingContext2D,
   data: PartialButFor<NodeDisplayData, 'x' | 'y' | 'size' | 'label' | 'color'>,
-  settings: Settings,
+  _settings: Settings,
 ): void {
   if (!data.label) return;
 
-  const scale = Math.max(data.size / 10, 0.6);
-  const fontSize = Math.max(Math.round(14 * scale), 9);
-  const font = settings.labelFont || 'sans-serif';
+  const scale = data.size / 15;
+  const firstFontSize = Math.max(6, Math.round(13 * scale));
+  const secondFontSize = Math.max(5, Math.round(11 * scale));
+  const padding = Math.max(4, Math.round(8 * scale));
+  const lineGap = Math.max(1, Math.round(3 * scale));
+  const font = 'sans-serif';
   const lines = data.label.split('\n');
 
-  const padding = Math.max(Math.round(8 * scale), 4);
-  const lineGap = Math.max(Math.round(3 * scale), 2);
-  const secondFontSize = Math.max(fontSize - 2, 7);
-
-  context.font = `bold ${fontSize}px ${font}`;
+  context.font = `bold ${firstFontSize}px ${font}`;
   let maxWidth = context.measureText(lines[0]).width;
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
@@ -108,14 +111,15 @@ function drawRectHover(
 
   const boxWidth = maxWidth + padding * 2;
   const totalTextHeight = lines.length > 1
-    ? fontSize + lineGap + secondFontSize
-    : fontSize;
+    ? firstFontSize + lineGap + secondFontSize
+    : firstFontSize;
   const boxHeight = totalTextHeight + padding * 2;
 
   const cx = data.x;
   const cy = data.y;
   const x = cx - boxWidth / 2;
   const y = cy - boxHeight / 2;
+  const r = Math.max(2, Math.round(4 * scale));
 
   context.shadowColor = 'rgba(0,122,204,0.5)';
   context.shadowBlur = 10;
@@ -123,22 +127,21 @@ function drawRectHover(
   context.strokeStyle = '#007acc';
   context.lineWidth = 2.5;
   context.beginPath();
-  roundRect(context, x, y, boxWidth, boxHeight, 4);
+  roundRect(context, x, y, boxWidth, boxHeight, r);
   context.fill();
   context.stroke();
   context.shadowBlur = 0;
 
   context.textAlign = 'center';
   context.textBaseline = 'top';
-
-  context.font = `bold ${fontSize}px ${font}`;
+  context.font = `bold ${firstFontSize}px ${font}`;
   context.fillStyle = '#ffffff';
   context.fillText(lines[0], cx, y + padding);
 
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
     context.fillStyle = '#88bbdd';
-    context.fillText(lines[1], cx, y + padding + fontSize + lineGap);
+    context.fillText(lines[1], cx, y + padding + firstFontSize + lineGap);
   }
 }
 
@@ -183,25 +186,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
       labelRenderedSizeThreshold: 0,
       labelSize: 13,
       labelWeight: 'bold',
-      labelDensity: 1,
-      labelGridCellSize: 100,
       defaultEdgeType: 'arrow',
       edgeLabelSize: 10,
       zIndex: true,
       itemSizesReference: 'positions',
-      minEdgeThickness: 0.5,
       doubleClickZoomingRatio: 1,
-      doubleClickZoomingDuration: 0,
       defaultDrawNodeLabel: drawRectLabel,
       defaultDrawNodeHover: drawRectHover,
       edgeProgramClasses: {
         arrow: EdgeArrowProgram,
       },
-      nodeHoverProgramClasses: {},
       nodeReducer: (node, data) => {
         const res = { ...data };
-        (res as any).borderColor = res.color;
-        res.color = '#1e1e1e';
 
         if (hoveredNodeRef.current) {
           if (node === hoveredNodeRef.current ||
@@ -210,6 +206,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             res.highlighted = true;
           } else {
             res.label = '';
+            res.color = `${res.color}40`;
           }
         }
 
@@ -250,8 +247,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       sigma.refresh();
     });
 
-    sigma.on('doubleClickNode', ({ node, event }) => {
-      event.preventSigmaDefault();
+    sigma.on('doubleClickNode', ({ node, preventSigmaDefault }) => {
+      preventSigmaDefault();
       const attrs = graph.getNodeAttributes(node);
       if (attrs.file && attrs.line) {
         onOpenSource?.(attrs.file, attrs.line);
@@ -260,8 +257,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
-    sigma.on('doubleClickStage', ({ event }) => {
-      event.preventSigmaDefault();
+    sigma.on('doubleClickStage', ({ preventSigmaDefault }) => {
+      preventSigmaDefault();
     });
 
     sigma.on('enterNode', ({ node }) => {
@@ -284,7 +281,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     sigma.on('rightClickNode', ({ node, event }) => {
       event.original.preventDefault();
-      event.preventSigmaDefault();
       const attrs = graph.getNodeAttributes(node);
       const rawLabel = (attrs.label || '').split('\n')[0];
       const mouseEvent = event.original as MouseEvent;
