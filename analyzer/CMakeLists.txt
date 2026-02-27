@@ -93,7 +93,18 @@ set(SOURCES
     ${PROTO_SRC}
 )
 
+# Compute Clang paths so ClangTool can find built-in and standard library headers
+set(CLANG_RESOURCE_DIR "${THIRD_PARTY_DIR}/llvm/lib/clang/${LLVM_VERSION_MAJOR}")
+set(CLANG_CXX_INCLUDE_DIR "${THIRD_PARTY_DIR}/llvm/include/c++/v1")
+message(STATUS "Clang resource dir: ${CLANG_RESOURCE_DIR}")
+message(STATUS "Clang C++ include dir: ${CLANG_CXX_INCLUDE_DIR}")
+
 add_executable(code-sage ${SOURCES})
+
+target_compile_definitions(code-sage PRIVATE
+    CLANG_RESOURCE_DIR="${CLANG_RESOURCE_DIR}"
+    CLANG_CXX_INCLUDE_DIR="${CLANG_CXX_INCLUDE_DIR}"
+)
 
 target_include_directories(code-sage PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -211,6 +222,10 @@ if(BUILD_TESTS)
             src/variable_collector.cpp
             src/ast_consumer.cpp
             ${PROTO_SRC}
+        )
+        target_compile_definitions(${TEST_NAME} PRIVATE
+            CLANG_RESOURCE_DIR="${CLANG_RESOURCE_DIR}"
+            CLANG_CXX_INCLUDE_DIR="${CLANG_CXX_INCLUDE_DIR}"
         )
         target_include_directories(${TEST_NAME} PRIVATE
             ${CMAKE_SOURCE_DIR}/src

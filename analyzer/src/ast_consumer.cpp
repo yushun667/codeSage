@@ -375,7 +375,9 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
                        std::make_shared<clang::PCHContainerOperations>(),
                        stubFS);
         tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
-            {"-ferror-limit=0", "-Wno-everything"},
+            {"-ferror-limit=0", "-Wno-everything",
+             "-resource-dir", CLANG_RESOURCE_DIR,
+             "-isystem", CLANG_CXX_INCLUDE_DIR},
             ArgumentInsertPosition::END));
         auto* diagConsumer = new CountingDiagConsumer();
         tool.setDiagnosticConsumer(diagConsumer);
