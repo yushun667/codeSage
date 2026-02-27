@@ -1,13 +1,13 @@
 import React, {
   useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle,
 } from 'react';
-import cytoscape, { Core, EventObject, NodeSingular } from 'cytoscape';
+import cytoscape, { Core, EventObject, NodeSingular, ElementDefinition } from 'cytoscape';
 import cytoscapeDagre from 'cytoscape-dagre';
 import { NodeData } from './NodeDetails';
 
 cytoscape.use(cytoscapeDagre);
 
-/* ── Public handle exposed via ref ── */
+/* ── Public handle ── */
 export interface GraphViewHandle {
   loadCallGraph(nodes: CyNodeData[], edges: CyEdgeData[]): void;
   loadDataFlow(nodes: CyNodeData[], edges: CyEdgeData[]): void;
@@ -18,6 +18,7 @@ export interface GraphViewHandle {
   reLayout(): void;
   exportPNG(): void;
   removeSelected(): void;
+  undo(): void;
 }
 
 export interface CyNodeData {
@@ -40,7 +41,6 @@ export interface CyEdgeData {
   color?: string;
 }
 
-/* ── Context menu state ── */
 interface ContextMenuState {
   visible: boolean;
   x: number;
@@ -49,13 +49,21 @@ interface ContextMenuState {
   nodeData: NodeData | null;
 }
 
-/* ── Props ── */
 interface GraphViewProps {
   onNodeSelect: (data: NodeData | null) => void;
   onOpenSource: (file: string, line: number) => void;
   onExpandNode: (usr: string, direction: 'forward' | 'backward') => void;
   onSetRoot: (usr: string) => void;
 }
+
+/* ── Undo system ── */
+interface UndoEntry {
+  type: 'add' | 'remove' | 'move';
+  elements?: ElementDefinition[];
+  positions?: Array<{ id: string; x: number; y: number }>;
+}
+
+const MAX_UNDO = 50;
 
 /* ── Cytoscape stylesheet ── */
 const CY_STYLE: cytoscape.StylesheetStyle[] = [
@@ -83,24 +91,15 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
   },
   {
     selector: 'node[?isRoot]',
-    style: {
-      'border-width': 3,
-      'font-weight': 'bold',
-    },
+    style: { 'border-width': 3, 'font-weight': 'bold' },
   },
   {
     selector: 'node:selected',
-    style: {
-      'border-color': '#007acc',
-      'border-width': 3,
-      'background-color': '#1a3050',
-    },
+    style: { 'border-color': '#007acc', 'border-width': 3, 'background-color': '#1a3050' },
   },
   {
     selector: 'node:active',
-    style: {
-      'overlay-opacity': 0.08,
-    },
+    style: { 'overlay-opacity': 0.08 },
   },
   {
     selector: 'edge',
@@ -109,28 +108,22 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
       'line-color': '#555',
       'target-arrow-color': '#555',
       'target-arrow-shape': 'triangle',
-      'curve-style': 'bezier',
+      'curve-style': 'round-taxi' as any,
+      'taxi-direction': 'rightward',
+      'taxi-radius': 12,
       'arrow-scale': 1,
-    },
+    } as any,
   },
   {
     selector: 'edge[color]',
-    style: {
-      'line-color': 'data(color)',
-      'target-arrow-color': 'data(color)',
-    },
+    style: { 'line-color': 'data(color)', 'target-arrow-color': 'data(color)' },
   },
   {
     selector: 'edge:selected',
-    style: {
-      'line-color': '#007acc',
-      'target-arrow-color': '#007acc',
-      'width': 2.5,
-    },
+    style: { 'line-color': '#007acc', 'target-arrow-color': '#007acc', 'width': 2.5 },
   },
 ];
 
-/* ── Dagre layout options ── */
 const DAGRE_LAYOUT: any = {
   name: 'dagre',
   rankDir: 'LR',
@@ -143,13 +136,11 @@ const DAGRE_LAYOUT: any = {
   padding: 40,
 };
 
-/* ── Helper: extract NodeData from a Cytoscape node ── */
 function nodeDataFromCy(node: NodeSingular): NodeData {
   const d = node.data();
-  const rawLabel = (d.label || '').split('\n')[0];
   return {
     usr: d.id,
-    label: rawLabel,
+    label: (d.label || '').split('\n')[0],
     file: d.file || '',
     line: d.line || 0,
     module: d.module || '',
@@ -164,9 +155,25 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
   ({ onNodeSelect, onOpenSource, onExpandNode, onSetRoot }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const cyRef = useRef<Core | null>(null);
+    const undoStackRef = useRef<UndoEntry[]>([]);
+    const dragStartPosRef = useRef<Array<{ id: string; x: number; y: number }> | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({
       visible: false, x: 0, y: 0, nodeId: '', nodeData: null,
     });
+
+    const pushUndo = useCallback((entry: UndoEntry) => {
+      const stack = undoStackRef.current;
+      stack.push(entry);
+      if (stack.length > MAX_UNDO) stack.shift();
+    }, []);
+
+    const removeWithUndo = useCallback((cy: Core, selector: string) => {
+      const eles = cy.elements(selector);
+      if (eles.length === 0) return;
+      const jsons = eles.jsons() as ElementDefinition[];
+      pushUndo({ type: 'remove', elements: jsons });
+      eles.remove();
+    }, [pushUndo]);
 
     /* ── Initialize Cytoscape ── */
     useEffect(() => {
@@ -180,7 +187,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         boxSelectionEnabled: true,
         selectionType: 'additive',
         userZoomingEnabled: true,
-        userPanningEnabled: true,
+        userPanningEnabled: false,
         minZoom: 0.1,
         maxZoom: 5,
         wheelSensitivity: 0.3,
@@ -188,13 +195,45 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
 
       cyRef.current = cy;
 
-      /* Single click → show info */
+      /* ── Right-click drag to pan ── */
+      let isPanning = false;
+      let lastPanX = 0;
+      let lastPanY = 0;
+      let panMoved = false;
+
+      const container = containerRef.current;
+
+      const onMouseDown = (e: MouseEvent) => {
+        if (e.button === 2) {
+          isPanning = true;
+          panMoved = false;
+          lastPanX = e.clientX;
+          lastPanY = e.clientY;
+        }
+      };
+      const onMouseMove = (e: MouseEvent) => {
+        if (!isPanning) return;
+        const dx = e.clientX - lastPanX;
+        const dy = e.clientY - lastPanY;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) panMoved = true;
+        cy.panBy({ x: dx, y: dy });
+        lastPanX = e.clientX;
+        lastPanY = e.clientY;
+      };
+      const onMouseUp = (e: MouseEvent) => {
+        if (e.button === 2) isPanning = false;
+      };
+
+      container.addEventListener('mousedown', onMouseDown);
+      container.addEventListener('mousemove', onMouseMove);
+      container.addEventListener('mouseup', onMouseUp);
+      container.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      /* ── Cytoscape events ── */
       cy.on('tap', 'node', (event: EventObject) => {
-        const node = event.target as NodeSingular;
-        onNodeSelect(nodeDataFromCy(node));
+        onNodeSelect(nodeDataFromCy(event.target as NodeSingular));
       });
 
-      /* Click on empty area → deselect, close menu */
       cy.on('tap', (event: EventObject) => {
         if (event.target === cy) {
           onNodeSelect(null);
@@ -202,16 +241,13 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         }
       });
 
-      /* Double click → jump to source code */
       cy.on('dbltap', 'node', (event: EventObject) => {
         const d = (event.target as NodeSingular).data();
-        if (d.file && d.line) {
-          onOpenSource(d.file, d.line);
-        }
+        if (d.file && d.line) onOpenSource(d.file, d.line);
       });
 
-      /* Right click → context menu */
       cy.on('cxttap', 'node', (event: EventObject) => {
+        if (panMoved) return;
         const node = event.target as NodeSingular;
         const domEvent = event.originalEvent as MouseEvent;
         setContextMenu({
@@ -223,14 +259,29 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         });
       });
 
-      /* Prevent browser context menu on the container */
-      containerRef.current.addEventListener('contextmenu', (e) => e.preventDefault());
+      /* ── Track drag for undo ── */
+      cy.on('grab', 'node', () => {
+        const grabbed = cy.nodes(':grabbed, :selected');
+        dragStartPosRef.current = grabbed.map(n => ({
+          id: n.id(), x: n.position('x'), y: n.position('y'),
+        }));
+      });
+
+      cy.on('free', 'node', () => {
+        if (dragStartPosRef.current && dragStartPosRef.current.length > 0) {
+          pushUndo({ type: 'move', positions: dragStartPosRef.current });
+          dragStartPosRef.current = null;
+        }
+      });
 
       return () => {
+        container.removeEventListener('mousedown', onMouseDown);
+        container.removeEventListener('mousemove', onMouseMove);
+        container.removeEventListener('mouseup', onMouseUp);
         cy.destroy();
         cyRef.current = null;
       };
-    }, [onNodeSelect, onOpenSource]);
+    }, [onNodeSelect, onOpenSource, pushUndo]);
 
     /* ── Keyboard shortcuts ── */
     useEffect(() => {
@@ -238,15 +289,47 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         const cy = cyRef.current;
         if (!cy) return;
 
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-          cy.elements(':selected').remove();
+        if ((e.key === 'Delete' || e.key === 'Backspace') && cy.elements(':selected').length > 0) {
+          removeWithUndo(cy, ':selected');
+        }
+
+        if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+          e.preventDefault();
+          performUndo();
         }
       };
       window.addEventListener('keydown', handler);
       return () => window.removeEventListener('keydown', handler);
+    }, [removeWithUndo]);
+
+    const performUndo = useCallback(() => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      const entry = undoStackRef.current.pop();
+      if (!entry) return;
+
+      switch (entry.type) {
+        case 'add':
+          if (entry.elements) {
+            entry.elements.forEach(el => {
+              const id = el.data?.id;
+              if (id) cy.getElementById(id).remove();
+            });
+          }
+          break;
+        case 'remove':
+          if (entry.elements) cy.add(entry.elements);
+          break;
+        case 'move':
+          if (entry.positions) {
+            entry.positions.forEach(({ id, x, y }) => {
+              cy.getElementById(id).position({ x, y });
+            });
+          }
+          break;
+      }
     }, []);
 
-    /* ── Expose methods via ref ── */
     const runLayout = useCallback(() => {
       const cy = cyRef.current;
       if (!cy || cy.elements().length === 0) return;
@@ -257,6 +340,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
       loadCallGraph(nodes: CyNodeData[], edges: CyEdgeData[]) {
         const cy = cyRef.current;
         if (!cy) return;
+        undoStackRef.current = [];
         cy.elements().remove();
         cy.add(nodes.map(n => ({ group: 'nodes' as const, data: n })));
         cy.add(edges.map(e => ({
@@ -269,6 +353,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
       loadDataFlow(nodes: CyNodeData[], edges: CyEdgeData[]) {
         const cy = cyRef.current;
         if (!cy) return;
+        undoStackRef.current = [];
         cy.elements().remove();
         cy.add(nodes.map(n => ({ group: 'nodes' as const, data: n })));
         cy.add(edges.map((e, i) => ({
@@ -283,21 +368,27 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         if (!cy) return;
         const existingIds = new Set(cy.nodes().map(n => n.id()));
         const newNodes = nodes.filter(n => !existingIds.has(n.id));
-        const existingEdges = new Set(cy.edges().map(e => e.id()));
         const newEdges = edges.filter(e => {
           const eid = `${e.source}->${e.target}`;
-          return !existingEdges.has(eid) && (existingIds.has(e.source) || newNodes.some(n => n.id === e.source))
-            && (existingIds.has(e.target) || newNodes.some(n => n.id === e.target));
+          return !cy.getElementById(eid).length &&
+            (existingIds.has(e.source) || newNodes.some(n => n.id === e.source)) &&
+            (existingIds.has(e.target) || newNodes.some(n => n.id === e.target));
         });
+        const added: ElementDefinition[] = [];
         if (newNodes.length > 0) {
-          cy.add(newNodes.map(n => ({ group: 'nodes' as const, data: n })));
+          const nodeEls = newNodes.map(n => ({ group: 'nodes' as const, data: n }));
+          cy.add(nodeEls);
+          added.push(...nodeEls);
         }
         if (newEdges.length > 0) {
-          cy.add(newEdges.map(e => ({
+          const edgeEls = newEdges.map(e => ({
             group: 'edges' as const,
             data: { ...e, id: `${e.source}->${e.target}` },
-          })));
+          }));
+          cy.add(edgeEls);
+          added.push(...edgeEls);
         }
+        if (added.length > 0) pushUndo({ type: 'add', elements: added });
         cy.layout(DAGRE_LAYOUT).run();
       },
 
@@ -305,36 +396,27 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         const cy = cyRef.current;
         if (cy) cy.zoom({ level: cy.zoom() * 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
       },
-
       zoomOut() {
         const cy = cyRef.current;
         if (cy) cy.zoom({ level: cy.zoom() / 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
       },
-
-      fitView() {
-        cyRef.current?.fit(undefined, 40);
-      },
-
-      reLayout() {
-        runLayout();
-      },
-
+      fitView() { cyRef.current?.fit(undefined, 40); },
+      reLayout() { runLayout(); },
       exportPNG() {
         const cy = cyRef.current;
         if (!cy) return;
-        const png = cy.png({ full: true, bg: '#1e1e1e', scale: 2 });
         const link = document.createElement('a');
         link.download = 'codesage-graph.png';
-        link.href = png;
+        link.href = cy.png({ full: true, bg: '#1e1e1e', scale: 2 });
         link.click();
       },
-
       removeSelected() {
-        cyRef.current?.elements(':selected').remove();
+        const cy = cyRef.current;
+        if (cy) removeWithUndo(cy, ':selected');
       },
-    }), [runLayout]);
+      undo() { performUndo(); },
+    }), [runLayout, pushUndo, removeWithUndo, performUndo]);
 
-    /* ── Context menu actions ── */
     const closeMenu = useCallback(() => {
       setContextMenu(prev => ({ ...prev, visible: false }));
     }, []);
@@ -346,18 +428,15 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
           <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
             {contextMenu.nodeData.nodeType === 'function' && (
               <>
-                <div className="context-item" onClick={() => {
-                  onExpandNode(contextMenu.nodeId, 'forward');
-                  closeMenu();
-                }}>展开调用 &rarr;</div>
-                <div className="context-item" onClick={() => {
-                  onExpandNode(contextMenu.nodeId, 'backward');
-                  closeMenu();
-                }}>&larr; 展开调用者</div>
-                <div className="context-item" onClick={() => {
-                  onSetRoot(contextMenu.nodeId);
-                  closeMenu();
-                }}>设为根节点</div>
+                <div className="context-item" onClick={() => { onExpandNode(contextMenu.nodeId, 'forward'); closeMenu(); }}>
+                  展开调用 &rarr;
+                </div>
+                <div className="context-item" onClick={() => { onExpandNode(contextMenu.nodeId, 'backward'); closeMenu(); }}>
+                  &larr; 展开调用者
+                </div>
+                <div className="context-item" onClick={() => { onSetRoot(contextMenu.nodeId); closeMenu(); }}>
+                  设为根节点
+                </div>
               </>
             )}
             <div className="context-item" onClick={() => {
@@ -365,11 +444,19 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
               closeMenu();
             }}>查看源码</div>
             <div className="context-item" onClick={() => {
-              cyRef.current?.getElementById(contextMenu.nodeId).remove();
+              const cy = cyRef.current;
+              if (cy) {
+                const el = cy.getElementById(contextMenu.nodeId);
+                if (el.length) {
+                  pushUndo({ type: 'remove', elements: el.jsons() as ElementDefinition[] });
+                  el.remove();
+                }
+              }
               closeMenu();
             }}>从视图移除</div>
             <div className="context-item" onClick={() => {
-              cyRef.current?.elements(':selected').remove();
+              const cy = cyRef.current;
+              if (cy) removeWithUndo(cy, ':selected');
               closeMenu();
             }}>删除选中节点</div>
           </div>

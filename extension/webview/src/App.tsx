@@ -68,6 +68,7 @@ const App: React.FC = () => {
         onZoomIn={() => graphRef.current?.zoomIn()}
         onZoomOut={() => graphRef.current?.zoomOut()}
         onFitView={() => graphRef.current?.fitView()}
+        onUndo={() => graphRef.current?.undo()}
       />
     </div>
   );

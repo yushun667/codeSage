@@ -6,6 +6,7 @@ interface ToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
+  onUndo: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -14,6 +15,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onZoomIn,
   onZoomOut,
   onFitView,
+  onUndo,
 }) => {
   return (
     <div className="fab-toolbar">
@@ -33,6 +35,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </svg>
       </button>
       <div className="fab-divider" />
+      <button className="fab-btn" onClick={onUndo} title="撤销 (Ctrl+Z)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 6l-3 3 3 3"/>
+          <path d="M1 9h9a4 4 0 010 0v0a4 4 0 01-4 4H5"/>
+          <path d="M1 9h9a4 4 0 010 8H5"/>
+        </svg>
+      </button>
       <button className="fab-btn" onClick={onRunLayout} title="重新布局">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
           <path d="M8 2v4M8 6L5 9M8 6l3 3M3 12h10"/>
