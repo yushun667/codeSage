@@ -4,7 +4,7 @@ import { useVSCode } from './hooks/useVSCode';
 import { useGraph, CallGraphData, DataFlowData } from './hooks/useGraph';
 import { useSearch, SearchResult } from './hooks/useSearch';
 import { SearchBar } from './components/SearchBar';
-import { GraphView, runForceLayout } from './components/GraphView';
+import { GraphView, runTreeLayout } from './components/GraphView';
 import { NodeDetails, NodeData } from './components/NodeDetails';
 import { Toolbar } from './components/Toolbar';
 import { MiniMap } from './components/MiniMap';
@@ -13,7 +13,7 @@ type EdgeFilter = 'all' | 'read' | 'write';
 
 const App: React.FC = () => {
   const { postMessage, onMessage } = useVSCode();
-  const { graph, nodeCount, edgeCount, clearGraph, loadCallGraph, loadDataFlow, addNodes } = useGraph();
+  const { graph, nodeCount, edgeCount, rootNode, clearGraph, loadCallGraph, loadDataFlow, addNodes } = useGraph();
   const { results, loading, search, handleResults, setResults } = useSearch();
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
   const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>('all');
@@ -28,17 +28,17 @@ const App: React.FC = () => {
           setIsDataFlowView(false);
           setEdgeFilter('all');
           loadCallGraph(data.data as CallGraphData, data.rootUsr);
-          setTimeout(() => runForceLayout(graph), 100);
+          setTimeout(() => runTreeLayout(graph, data.rootUsr), 100);
           break;
         case 'loadDataFlow':
           setIsDataFlowView(true);
           setEdgeFilter('all');
           loadDataFlow(data.data as DataFlowData, data.varUsr);
-          setTimeout(() => runForceLayout(graph), 100);
+          setTimeout(() => runTreeLayout(graph, data.varUsr), 100);
           break;
         case 'addNodes':
           addNodes(data.data as CallGraphData);
-          setTimeout(() => runForceLayout(graph), 100);
+          setTimeout(() => runTreeLayout(graph), 100);
           break;
         case 'searchResults':
           handleResults(data.data.map((f: any) => ({
@@ -61,8 +61,11 @@ const App: React.FC = () => {
   }, []);
 
   const handleNodeDoubleClick = useCallback((usr: string) => {
-    postMessage({ type: 'expandNode', usr, direction: 'forward' });
-  }, [postMessage]);
+    const attrs = graph.getNodeAttributes(usr);
+    if (attrs?.file && attrs?.line) {
+      postMessage({ type: 'openSource', file: attrs.file, line: attrs.line });
+    }
+  }, [postMessage, graph]);
 
   const handleOpenSource = useCallback((file: string, line: number) => {
     postMessage({ type: 'openSource', file, line });
@@ -92,9 +95,9 @@ const App: React.FC = () => {
   }, [postMessage, setResults]);
 
   const handleRunLayout = useCallback(() => {
-    runForceLayout(graph);
+    runTreeLayout(graph, rootNode);
     sigmaRef.current?.refresh();
-  }, [graph]);
+  }, [graph, rootNode]);
 
   const handleExportPNG = useCallback(() => {
     const canvas = document.querySelector('.graph-container canvas') as HTMLCanvasElement;

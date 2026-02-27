@@ -82,12 +82,13 @@ export function useGraph() {
     data.nodes.forEach((node, i) => {
       const angle = i * angleStep;
       const radius = node.usr === rootUsr ? 0 : 5 + Math.random() * 5;
+      const fileName = node.file.split('/').pop() || node.file;
 
       graph.addNode(node.usr, {
-        label: node.name,
+        label: `${node.name}\n${fileName}:${node.line}`,
         x: radius * Math.cos(angle),
         y: radius * Math.sin(angle),
-        size: node.usr === rootUsr ? 15 : 8,
+        size: 6,
         color: node.usr === rootUsr ? '#e74c3c' : getModuleColor(node.module),
         nodeType: 'function' as const,
         file: node.file,
@@ -123,11 +124,12 @@ export function useGraph() {
     let idx = 0;
 
     data.variable_nodes.forEach((node) => {
+      const fileName = node.file.split('/').pop() || node.file;
       graph.addNode(node.usr, {
-        label: node.name,
+        label: `${node.name}\n${fileName}:${node.line}`,
         x: 0,
         y: 0,
-        size: 18,
+        size: 6,
         color: '#9b59b6',
         nodeType: 'variable' as const,
         file: node.file,
@@ -141,11 +143,12 @@ export function useGraph() {
 
     data.function_nodes.forEach((node) => {
       const angle = idx * angleStep;
+      const fileName = node.file.split('/').pop() || node.file;
       graph.addNode(node.usr, {
-        label: node.name,
+        label: `${node.name}\n${fileName}:${node.line}`,
         x: 8 * Math.cos(angle),
         y: 8 * Math.sin(angle),
-        size: 8,
+        size: 6,
         color: getModuleColor(node.module),
         nodeType: 'function' as const,
         file: node.file,
@@ -180,11 +183,12 @@ export function useGraph() {
 
     data.nodes.forEach((node) => {
       if (!graph.hasNode(node.usr)) {
+        const fileName = node.file.split('/').pop() || node.file;
         graph.addNode(node.usr, {
-          label: node.name,
+          label: `${node.name}\n${fileName}:${node.line}`,
           x: (Math.random() - 0.5) * 10,
           y: (Math.random() - 0.5) * 10,
-          size: 8,
+          size: 6,
           color: getModuleColor(node.module),
           nodeType: 'function' as const,
           file: node.file,
