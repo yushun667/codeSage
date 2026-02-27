@@ -4,6 +4,7 @@
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclBase.h>
+#include <clang/AST/DeclCXX.h>
 #include <clang/AST/Expr.h>
 #include <clang/AST/ExprCXX.h>
 #include <clang/Basic/SourceManager.h>
@@ -167,7 +168,35 @@ void CallExprCallback::run(const MatchFinder::MatchResult& result) {
         call_loc = call->getBeginLoc();
 
         if (!callee_decl) {
-            CS_DEBUG("Skipped call: no direct callee (function pointer or unresolved)");
+            if (auto* decl = call->getCalleeDecl()) {
+                callee_decl = dyn_cast<FunctionDecl>(decl);
+                if (!callee_decl) {
+                    if (auto* usd = dyn_cast<UsingShadowDecl>(decl)) {
+                        callee_decl = dyn_cast<FunctionDecl>(usd->getTargetDecl());
+                    }
+                }
+            }
+        }
+
+        if (!callee_decl) {
+            std::string callee_name = "(unknown)";
+            if (auto* callee_expr = call->getCallee()) {
+                auto* stripped = callee_expr->IgnoreParenImpCasts();
+                if (auto* dre = dyn_cast<DeclRefExpr>(stripped)) {
+                    callee_name = dre->getNameInfo().getAsString();
+                } else if (auto* me = dyn_cast<MemberExpr>(stripped)) {
+                    callee_name = me->getMemberNameInfo().getAsString();
+                } else if (auto* ule = dyn_cast<UnresolvedLookupExpr>(stripped)) {
+                    callee_name = ule->getName().getAsString();
+                }
+            }
+            auto ploc = sm.getPresumedLoc(call_loc);
+            if (ploc.isValid()) {
+                CS_WARN("Unresolved call to '{}' at {}:{}  (no direct callee)",
+                        callee_name, ploc.getFilename(), ploc.getLine());
+            } else {
+                CS_WARN("Unresolved call to '{}' (no direct callee)", callee_name);
+            }
             skipped_count_++;
             return;
         }

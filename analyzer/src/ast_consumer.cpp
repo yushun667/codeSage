@@ -25,6 +25,19 @@ using namespace clang::tooling;
 
 namespace codesage {
 
+class CountingDiagConsumer : public clang::DiagnosticConsumer {
+public:
+    void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
+                          const clang::Diagnostic& info) override {
+        if (level >= clang::DiagnosticsEngine::Error) {
+            errors_++;
+        }
+    }
+    unsigned getErrorCount() const { return errors_; }
+private:
+    unsigned errors_ = 0;
+};
+
 // Custom compilation database wrapper that adjusts compile commands
 class AdjustedCompilationDatabase : public CompilationDatabase {
 public:
@@ -284,11 +297,14 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
 
     for (const auto& file : files) {
         ClangTool tool(cdb, {file});
-        tool.setDiagnosticConsumer(new clang::IgnoringDiagConsumer());
+        auto* diagConsumer = new CountingDiagConsumer();
+        tool.setDiagnosticConsumer(diagConsumer);
         int result = tool.run(factory.get());
 
-        if (result != 0) {
-            CS_WARN("ClangTool returned non-zero for {}: {}", file, result);
+        unsigned errs = diagConsumer->getErrorCount();
+        if (result != 0 || errs > 0) {
+            CS_WARN("File {}: exit={}, compile_errors={}  (missing headers may cause incomplete call edges)",
+                    file, result, errs);
         }
 
         storage_.markFileParsed(file);
