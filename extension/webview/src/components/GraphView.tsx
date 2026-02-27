@@ -70,10 +70,7 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: 'core' as any,
     style: {
-      'selection-box-color': 'rgba(0, 122, 204, 0.08)',
-      'selection-box-border-color': '#007acc',
-      'selection-box-border-width': 3,
-      'selection-box-opacity': 1,
+      'selection-box-opacity': 0,
       'active-bg-opacity': 0,
     } as any,
   },
@@ -220,6 +217,21 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
       let boxStartOffsetX = 0;
       let boxStartOffsetY = 0;
 
+      const boxDiv = document.createElement('div');
+      boxDiv.style.cssText =
+        'position:absolute;border:2px solid #007acc;pointer-events:none;display:none;z-index:10;box-sizing:border-box;';
+      container.style.position = 'relative';
+      container.appendChild(boxDiv);
+
+      const showBoxDiv = (x: number, y: number, w: number, h: number) => {
+        boxDiv.style.left = `${x}px`;
+        boxDiv.style.top = `${y}px`;
+        boxDiv.style.width = `${w}px`;
+        boxDiv.style.height = `${h}px`;
+        boxDiv.style.display = 'block';
+      };
+      const hideBoxDiv = () => { boxDiv.style.display = 'none'; };
+
       const onMouseDown = (e: MouseEvent) => {
         if (e.button === 2) {
           isPanning = true;
@@ -246,6 +258,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
           const y1 = Math.min(boxStartOffsetY, e.offsetY);
           const x2 = Math.max(boxStartOffsetX, e.offsetX);
           const y2 = Math.max(boxStartOffsetY, e.offsetY);
+          showBoxDiv(x1, y1, x2 - x1, y2 - y1);
           cy.nodes().forEach(n => {
             const rp = n.renderedPosition();
             const inside = rp.x >= x1 && rp.x <= x2 && rp.y >= y1 && rp.y <= y2;
@@ -258,6 +271,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         if (e.button === 2) isPanning = false;
         if (isBoxSelecting) {
           isBoxSelecting = false;
+          hideBoxDiv();
           cy.nodes().removeClass('box-preview');
         }
       };
@@ -265,6 +279,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
       cy.on('boxstart', () => { isBoxSelecting = true; });
       cy.on('boxend', () => {
         isBoxSelecting = false;
+        hideBoxDiv();
         cy.nodes().removeClass('box-preview');
       });
 
@@ -336,6 +351,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         container.removeEventListener('mousemove', onMouseMove);
         container.removeEventListener('mouseup', onMouseUp);
         container.removeEventListener('wheel', onWheel);
+        boxDiv.remove();
         cy.destroy();
         cyRef.current = null;
       };
