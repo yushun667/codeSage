@@ -219,7 +219,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
 
       const boxDiv = document.createElement('div');
       boxDiv.style.cssText =
-        'position:absolute;border:2px solid #007acc;pointer-events:none;display:none;z-index:10;box-sizing:border-box;';
+        'position:absolute;border:1px dashed #007acc;background:rgba(0,122,204,0.06);pointer-events:none;display:none;z-index:10;box-sizing:border-box;';
       container.style.position = 'relative';
       container.appendChild(boxDiv);
 
