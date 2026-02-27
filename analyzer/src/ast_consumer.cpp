@@ -20,6 +20,10 @@
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
+#include <llvm/Support/VirtualFileSystem.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/Path.h>
+
 using namespace clang;
 using namespace clang::ast_matchers;
 using namespace clang::tooling;
@@ -37,6 +41,73 @@ public:
     unsigned getErrorCount() const { return errors_; }
 private:
     unsigned errors_ = 0;
+};
+
+// Virtual file that returns empty content, used as stub for missing headers
+class StubHeaderFile : public llvm::vfs::File {
+    llvm::vfs::Status St;
+public:
+    explicit StubHeaderFile(llvm::vfs::Status S) : St(std::move(S)) {}
+    llvm::ErrorOr<llvm::vfs::Status> status() override { return St; }
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+    getBuffer(const llvm::Twine &Name, int64_t FileSize,
+              bool RequiresNullTerminator, bool IsVolatile) override {
+        return llvm::MemoryBuffer::getMemBuffer("", Name.str());
+    }
+    std::error_code close() override { return {}; }
+};
+
+// VFS layer that intercepts missing header file lookups and returns empty stubs.
+// This prevents #include failures from cascading into fatal preprocessing errors
+// that would otherwise destroy the AST and cause call edges to be lost.
+class MissingHeaderGuardFS : public llvm::vfs::ProxyFileSystem {
+public:
+    explicit MissingHeaderGuardFS(llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> BaseFS)
+        : ProxyFileSystem(std::move(BaseFS)) {}
+
+    llvm::ErrorOr<llvm::vfs::Status> status(const llvm::Twine &Path) override {
+        auto Result = getUnderlyingFS().status(Path);
+        if (Result)
+            return Result;
+        std::string P = Path.str();
+        if (looksLikeHeader(P))
+            return makeStubStatus(P);
+        return Result;
+    }
+
+    llvm::ErrorOr<std::unique_ptr<llvm::vfs::File>>
+    openFileForRead(const llvm::Twine &Path) override {
+        auto Result = getUnderlyingFS().openFileForRead(Path);
+        if (Result)
+            return Result;
+        std::string P = Path.str();
+        if (looksLikeHeader(P)) {
+            stub_count_++;
+            return std::unique_ptr<llvm::vfs::File>(
+                std::make_unique<StubHeaderFile>(makeStubStatus(P)));
+        }
+        return Result;
+    }
+
+    size_t getStubCount() const { return stub_count_.load(); }
+
+private:
+    static bool looksLikeHeader(const std::string& P) {
+        auto ext = llvm::sys::path::extension(P);
+        return ext == ".h" || ext == ".hpp" || ext == ".hxx" ||
+               ext == ".hh" || ext == ".H" || ext == ".inc";
+    }
+
+    llvm::vfs::Status makeStubStatus(const std::string& P) {
+        return llvm::vfs::Status(
+            P, llvm::sys::fs::UniqueID(0, next_inode_++),
+            llvm::sys::TimePoint<>{}, 0, 0, 0,
+            llvm::sys::fs::file_type::regular_file,
+            llvm::sys::fs::owner_read);
+    }
+
+    std::atomic<uint64_t> next_inode_{1000000};
+    std::atomic<size_t> stub_count_{0};
 };
 
 // Custom compilation database wrapper that adjusts compile commands
@@ -296,8 +367,13 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
 
     auto factory = newFrontendActionFactory(&finder);
 
+    auto* guardFS = new MissingHeaderGuardFS(llvm::vfs::getRealFileSystem());
+    llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> stubFS(guardFS);
+
     for (const auto& file : files) {
-        ClangTool tool(cdb, {file});
+        ClangTool tool(cdb, {file},
+                       std::make_shared<clang::PCHContainerOperations>(),
+                       stubFS);
         tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
             {"-ferror-limit=0", "-Wno-everything"},
             ArgumentInsertPosition::END));
@@ -307,7 +383,7 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
 
         unsigned errs = diagConsumer->getErrorCount();
         if (result != 0 || errs > 0) {
-            CS_WARN("File {}: exit={}, compile_errors={}  (missing headers may cause incomplete call edges)",
+            CS_WARN("File {}: exit={}, compile_errors={}",
                     file, result, errs);
         }
 
@@ -327,8 +403,9 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
     stats.variables_collected = var_cb.getCollectedCount();
     stats.accesses_collected = ref_cb.getCollectedCount();
 
-    CS_INFO("Call edge collection: {} stored, {} skipped",
-            call_cb.getCollectedCount(), call_cb.getSkippedCount());
+    size_t stubs = guardFS->getStubCount();
+    CS_INFO("Call edge collection: {} stored, {} skipped; stub headers served: {}",
+            call_cb.getCollectedCount(), call_cb.getSkippedCount(), stubs);
 
     return stats;
 }
