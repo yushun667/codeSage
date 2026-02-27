@@ -1,44 +1,48 @@
 import React from 'react';
 
 interface ToolbarProps {
-  nodeCount: number;
-  edgeCount: number;
-  onClear: () => void;
   onRunLayout: () => void;
   onExportPNG: () => void;
-  onExportJSON: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
-  nodeCount,
-  edgeCount,
-  onClear,
   onRunLayout,
   onExportPNG,
-  onExportJSON,
   onZoomIn,
   onZoomOut,
   onFitView,
 }) => {
   return (
-    <div className="toolbar">
-      <div className="toolbar-left">
-        <span className="stats">
-          {nodeCount} 节点 / {edgeCount} 边
-        </span>
-      </div>
-      <div className="toolbar-right">
-        <button className="tool-btn" onClick={onZoomIn} title="放大">+</button>
-        <button className="tool-btn" onClick={onZoomOut} title="缩小">-</button>
-        <button className="tool-btn" onClick={onFitView} title="适应视图">⊡</button>
-        <button className="tool-btn" onClick={onRunLayout} title="重新布局">布局</button>
-        <button className="tool-btn" onClick={onExportPNG} title="导出PNG">PNG</button>
-        <button className="tool-btn" onClick={onExportJSON} title="导出JSON">JSON</button>
-        <button className="tool-btn danger" onClick={onClear} title="清空">清空</button>
-      </div>
+    <div className="fab-toolbar">
+      <button className="fab-btn" onClick={onZoomIn} title="放大">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+        </svg>
+      </button>
+      <button className="fab-btn" onClick={onZoomOut} title="缩小">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+        </svg>
+      </button>
+      <button className="fab-btn" onClick={onFitView} title="适应视图">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 6V3a1 1 0 011-1h3M10 2h3a1 1 0 011 1v3M14 10v3a1 1 0 01-1 1h-3M6 14H3a1 1 0 01-1-1v-3"/>
+        </svg>
+      </button>
+      <div className="fab-divider" />
+      <button className="fab-btn" onClick={onRunLayout} title="重新布局">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 2v4M8 6L5 9M8 6l3 3M3 12h10"/>
+        </svg>
+      </button>
+      <button className="fab-btn" onClick={onExportPNG} title="导出 PNG">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 2v8M8 10l-3-3M8 10l3-3M3 13h10"/>
+        </svg>
+      </button>
     </div>
   );
 };
