@@ -164,51 +164,17 @@ void CallExprCallback::run(const MatchFinder::MatchResult& result) {
     SourceLocation call_loc;
 
     if (const auto* call = result.Nodes.getNodeAs<CallExpr>("call")) {
-        callee_decl = call->getDirectCallee();
+        callee_decl = result.Nodes.getNodeAs<FunctionDecl>("callee");
         call_loc = call->getBeginLoc();
-
-        if (!callee_decl) {
-            if (auto* decl = call->getCalleeDecl()) {
-                callee_decl = dyn_cast<FunctionDecl>(decl);
-                if (!callee_decl) {
-                    if (auto* usd = dyn_cast<UsingShadowDecl>(decl)) {
-                        callee_decl = dyn_cast<FunctionDecl>(usd->getTargetDecl());
-                    }
-                }
-            }
-        }
-
-        if (!callee_decl) {
-            std::string callee_name = "(unknown)";
-            if (auto* callee_expr = call->getCallee()) {
-                auto* stripped = callee_expr->IgnoreParenImpCasts();
-                if (auto* dre = dyn_cast<DeclRefExpr>(stripped)) {
-                    callee_name = dre->getNameInfo().getAsString();
-                } else if (auto* me = dyn_cast<MemberExpr>(stripped)) {
-                    callee_name = me->getMemberNameInfo().getAsString();
-                } else if (auto* ule = dyn_cast<UnresolvedLookupExpr>(stripped)) {
-                    callee_name = ule->getName().getAsString();
-                }
-            }
-            auto ploc = sm.getPresumedLoc(call_loc);
-            if (ploc.isValid()) {
-                CS_WARN("Unresolved call to '{}' at {}:{}  (no direct callee)",
-                        callee_name, ploc.getFilename(), ploc.getLine());
-            } else {
-                CS_WARN("Unresolved call to '{}' (no direct callee)", callee_name);
-            }
-            skipped_count_++;
-            return;
-        }
-
-        if (!findCallerAndStore(ctx, sm, *call, callee_decl, call_loc)) return;
+        if (!callee_decl) return;
+        findCallerAndStore(ctx, sm, *call, callee_decl, call_loc);
 
     } else if (const auto* ctor = result.Nodes.getNodeAs<CXXConstructExpr>("construct")) {
+        if (ctor->getParenOrBraceRange().isInvalid()) return;
         callee_decl = ctor->getConstructor();
         call_loc = ctor->getBeginLoc();
-
         if (!callee_decl) return;
-        if (!findCallerAndStore(ctx, sm, *ctor, callee_decl, call_loc)) return;
+        findCallerAndStore(ctx, sm, *ctor, callee_decl, call_loc);
     }
 }
 

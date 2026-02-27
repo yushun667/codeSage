@@ -16,6 +16,7 @@
 #include <clang/Frontend/FrontendActions.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 #include <clang/Tooling/Tooling.h>
+#include <clang/Tooling/ArgumentsAdjusters.h>
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
@@ -286,7 +287,9 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
 
     MatchFinder finder;
     finder.addMatcher(functionDecl(isDefinition()).bind("func"), &func_cb);
-    finder.addMatcher(callExpr().bind("call"), &call_cb);
+    finder.addMatcher(
+        callExpr(callee(functionDecl().bind("callee"))).bind("call"),
+        &call_cb);
     finder.addMatcher(cxxConstructExpr().bind("construct"), &call_cb);
     finder.addMatcher(varDecl(hasGlobalStorage()).bind("globalVar"), &var_cb);
     finder.addMatcher(
@@ -297,6 +300,9 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
 
     for (const auto& file : files) {
         ClangTool tool(cdb, {file});
+        tool.appendArgumentsAdjuster(getInsertArgumentAdjuster(
+            {"-ferror-limit=0", "-Wno-everything"},
+            ArgumentInsertPosition::END));
         auto* diagConsumer = new CountingDiagConsumer();
         tool.setDiagnosticConsumer(diagConsumer);
         int result = tool.run(factory.get());

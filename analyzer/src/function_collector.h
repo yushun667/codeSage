@@ -2,15 +2,10 @@
 
 #include <string>
 #include <vector>
-#include <set>
-#include <deque>
 #include <unordered_set>
 
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/AST/Decl.h>
-#include <clang/AST/DeclCXX.h>
-#include <clang/AST/ExprCXX.h>
-#include <clang/AST/Expr.h>
 
 #include "generated/codesage.pb.h"
 
