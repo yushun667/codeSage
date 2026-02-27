@@ -147,6 +147,52 @@ const DAGRE_LAYOUT: any = {
   padding: 40,
 };
 
+/**
+ * After dagre layout, align siblings (children of the same parent):
+ *  - Right side of root → left-align (left edges line up)
+ *  - Left side of root  → right-align (right edges line up)
+ */
+function alignSiblings(cy: cytoscape.Core) {
+  const roots = cy.nodes('[?isRoot]');
+  if (roots.length === 0) return;
+  const rootX = roots.first().position('x');
+
+  const parentChildren = new Map<string, string[]>();
+  cy.edges().forEach(edge => {
+    const srcId = edge.source().id();
+    const tgtId = edge.target().id();
+    if (!parentChildren.has(srcId)) parentChildren.set(srcId, []);
+    parentChildren.get(srcId)!.push(tgtId);
+  });
+
+  parentChildren.forEach((childIds) => {
+    if (childIds.length < 2) return;
+    const children = childIds
+      .map(id => cy.getElementById(id))
+      .filter(n => n.length > 0 && n.isNode());
+    if (children.length < 2) return;
+
+    const avgX = children.reduce((s, n) => s + n.position('x'), 0) / children.length;
+
+    if (avgX >= rootX) {
+      const minLeft = Math.min(...children.map(n => n.position('x') - n.width() / 2));
+      children.forEach(n => n.position('x', minLeft + n.width() / 2));
+    } else {
+      const maxRight = Math.max(...children.map(n => n.position('x') + n.width() / 2));
+      children.forEach(n => n.position('x', maxRight - n.width() / 2));
+    }
+  });
+}
+
+function runAlignedLayout(cy: cytoscape.Core) {
+  cy.layout({
+    ...DAGRE_LAYOUT,
+    animate: false,
+  }).run();
+  alignSiblings(cy);
+  cy.fit(undefined, 40);
+}
+
 function nodeDataFromCy(node: NodeSingular): NodeData {
   const d = node.data();
   return {
@@ -407,7 +453,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
     const runLayout = useCallback(() => {
       const cy = cyRef.current;
       if (!cy || cy.elements().length === 0) return;
-      cy.layout(DAGRE_LAYOUT).run();
+      runAlignedLayout(cy);
     }, []);
 
     useImperativeHandle(ref, () => ({
@@ -421,7 +467,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
           group: 'edges' as const,
           data: { ...e, id: `${e.source}->${e.target}` },
         })));
-        cy.layout(DAGRE_LAYOUT).run();
+        runAlignedLayout(cy);
       },
 
       loadDataFlow(nodes: CyNodeData[], edges: CyEdgeData[]) {
@@ -434,7 +480,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
           group: 'edges' as const,
           data: { ...e, id: `df-${e.source}->${e.target}-${i}` },
         })));
-        cy.layout(DAGRE_LAYOUT).run();
+        runAlignedLayout(cy);
       },
 
       addNodes(nodes: CyNodeData[], edges: CyEdgeData[]) {
@@ -463,7 +509,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
           added.push(...edgeEls);
         }
         if (added.length > 0) pushUndo({ type: 'add', elements: added });
-        cy.layout(DAGRE_LAYOUT).run();
+        runAlignedLayout(cy);
       },
 
       zoomIn() {
