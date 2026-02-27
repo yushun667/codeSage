@@ -1,11 +1,46 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
-import Sigma from 'sigma';
-import Graph from 'graphology';
-import { EdgeArrowProgram } from 'sigma/rendering';
+import React, {
+  useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle,
+} from 'react';
+import cytoscape, { Core, EventObject, NodeSingular } from 'cytoscape';
+import cytoscapeDagre from 'cytoscape-dagre';
 import { NodeData } from './NodeDetails';
-import type { Settings } from 'sigma/settings';
-import type { NodeDisplayData, PartialButFor } from 'sigma/types';
 
+cytoscape.use(cytoscapeDagre);
+
+/* ── Public handle exposed via ref ── */
+export interface GraphViewHandle {
+  loadCallGraph(nodes: CyNodeData[], edges: CyEdgeData[]): void;
+  loadDataFlow(nodes: CyNodeData[], edges: CyEdgeData[]): void;
+  addNodes(nodes: CyNodeData[], edges: CyEdgeData[]): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  fitView(): void;
+  reLayout(): void;
+  exportPNG(): void;
+  removeSelected(): void;
+}
+
+export interface CyNodeData {
+  id: string;
+  label: string;
+  file: string;
+  line: number;
+  module: string;
+  color: string;
+  nodeType: 'function' | 'variable';
+  isRoot?: boolean;
+  signature?: string;
+  varType?: string;
+}
+
+export interface CyEdgeData {
+  source: string;
+  target: string;
+  edgeType: string;
+  color?: string;
+}
+
+/* ── Context menu state ── */
 interface ContextMenuState {
   visible: boolean;
   x: number;
@@ -14,449 +49,334 @@ interface ContextMenuState {
   nodeData: NodeData | null;
 }
 
+/* ── Props ── */
 interface GraphViewProps {
-  graph: Graph;
-  onNodeClick: (nodeData: NodeData) => void;
-  onNodeDoubleClick: (usr: string) => void;
-  onNodeExpand?: (usr: string, direction: 'forward' | 'backward') => void;
-  onOpenSource?: (file: string, line: number) => void;
-  onSetRoot?: (usr: string) => void;
-  onRemoveNode?: (usr: string) => void;
-  sigmaRef: React.MutableRefObject<Sigma | null>;
+  onNodeSelect: (data: NodeData | null) => void;
+  onOpenSource: (file: string, line: number) => void;
+  onExpandNode: (usr: string, direction: 'forward' | 'backward') => void;
+  onSetRoot: (usr: string) => void;
 }
 
-/**
- * Label renderer: draws a rectangular box with scaled multi-line text.
- * Font size is derived from data.size so labels scale with camera zoom
- * when itemSizesReference is "positions".
- */
-function drawRectLabel(
-  context: CanvasRenderingContext2D,
-  data: PartialButFor<NodeDisplayData, 'x' | 'y' | 'size' | 'label' | 'color'>,
-  _settings: Settings,
-): void {
-  if (!data.label) return;
+/* ── Cytoscape stylesheet ── */
+const CY_STYLE: cytoscape.StylesheetStyle[] = [
+  {
+    selector: 'node',
+    style: {
+      'shape': 'round-rectangle',
+      'width': 'label',
+      'height': 'label',
+      'padding': '10px',
+      'label': 'data(label)',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'text-wrap': 'wrap',
+      'text-max-width': '220px',
+      'font-size': '12px',
+      'font-family': 'Menlo, Consolas, monospace',
+      'background-color': '#1e2a36',
+      'border-width': 2,
+      'border-color': 'data(color)',
+      'color': '#d4d4d4',
+      'text-outline-width': 0,
+      'min-zoomed-font-size': 0,
+    } as any,
+  },
+  {
+    selector: 'node[?isRoot]',
+    style: {
+      'border-width': 3,
+      'font-weight': 'bold',
+    },
+  },
+  {
+    selector: 'node:selected',
+    style: {
+      'border-color': '#007acc',
+      'border-width': 3,
+      'background-color': '#1a3050',
+    },
+  },
+  {
+    selector: 'node:active',
+    style: {
+      'overlay-opacity': 0.08,
+    },
+  },
+  {
+    selector: 'edge',
+    style: {
+      'width': 1.5,
+      'line-color': '#555',
+      'target-arrow-color': '#555',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier',
+      'arrow-scale': 1,
+    },
+  },
+  {
+    selector: 'edge[color]',
+    style: {
+      'line-color': 'data(color)',
+      'target-arrow-color': 'data(color)',
+    },
+  },
+  {
+    selector: 'edge:selected',
+    style: {
+      'line-color': '#007acc',
+      'target-arrow-color': '#007acc',
+      'width': 2.5,
+    },
+  },
+];
 
-  const scale = data.size / 15;
-  const firstFontSize = Math.max(6, Math.round(13 * scale));
-  const secondFontSize = Math.max(5, Math.round(11 * scale));
-  const padding = Math.max(3, Math.round(6 * scale));
-  const lineGap = Math.max(1, Math.round(3 * scale));
-  const font = 'sans-serif';
-  const lines = data.label.split('\n');
-
-  context.font = `bold ${firstFontSize}px ${font}`;
-  let maxWidth = context.measureText(lines[0]).width;
-  if (lines.length > 1) {
-    context.font = `${secondFontSize}px ${font}`;
-    const w2 = context.measureText(lines[1]).width;
-    if (w2 > maxWidth) maxWidth = w2;
-  }
-
-  const boxWidth = maxWidth + padding * 2;
-  const totalTextHeight = lines.length > 1
-    ? firstFontSize + lineGap + secondFontSize
-    : firstFontSize;
-  const boxHeight = totalTextHeight + padding * 2;
-
-  const cx = data.x;
-  const cy = data.y;
-  const x = cx - boxWidth / 2;
-  const y = cy - boxHeight / 2;
-  const r = Math.max(2, Math.round(4 * scale));
-
-  context.fillStyle = data.highlighted ? '#2a3a4a' : '#1e2a36';
-  context.strokeStyle = data.color || '#555';
-  context.lineWidth = data.highlighted ? 2 : 1;
-  context.beginPath();
-  roundRect(context, x, y, boxWidth, boxHeight, r);
-  context.fill();
-  context.stroke();
-
-  context.textAlign = 'center';
-  context.textBaseline = 'top';
-  context.font = `bold ${firstFontSize}px ${font}`;
-  context.fillStyle = '#e0e0e0';
-  context.fillText(lines[0], cx, y + padding);
-
-  if (lines.length > 1) {
-    context.font = `${secondFontSize}px ${font}`;
-    context.fillStyle = '#8899aa';
-    context.fillText(lines[1], cx, y + padding + firstFontSize + lineGap);
-  }
-}
-
-function drawRectHover(
-  context: CanvasRenderingContext2D,
-  data: PartialButFor<NodeDisplayData, 'x' | 'y' | 'size' | 'label' | 'color'>,
-  _settings: Settings,
-): void {
-  if (!data.label) return;
-
-  const scale = data.size / 15;
-  const firstFontSize = Math.max(6, Math.round(13 * scale));
-  const secondFontSize = Math.max(5, Math.round(11 * scale));
-  const padding = Math.max(4, Math.round(8 * scale));
-  const lineGap = Math.max(1, Math.round(3 * scale));
-  const font = 'sans-serif';
-  const lines = data.label.split('\n');
-
-  context.font = `bold ${firstFontSize}px ${font}`;
-  let maxWidth = context.measureText(lines[0]).width;
-  if (lines.length > 1) {
-    context.font = `${secondFontSize}px ${font}`;
-    const w2 = context.measureText(lines[1]).width;
-    if (w2 > maxWidth) maxWidth = w2;
-  }
-
-  const boxWidth = maxWidth + padding * 2;
-  const totalTextHeight = lines.length > 1
-    ? firstFontSize + lineGap + secondFontSize
-    : firstFontSize;
-  const boxHeight = totalTextHeight + padding * 2;
-
-  const cx = data.x;
-  const cy = data.y;
-  const x = cx - boxWidth / 2;
-  const y = cy - boxHeight / 2;
-  const r = Math.max(2, Math.round(4 * scale));
-
-  context.shadowColor = 'rgba(0,122,204,0.5)';
-  context.shadowBlur = 10;
-  context.fillStyle = '#1a3050';
-  context.strokeStyle = '#007acc';
-  context.lineWidth = 2.5;
-  context.beginPath();
-  roundRect(context, x, y, boxWidth, boxHeight, r);
-  context.fill();
-  context.stroke();
-  context.shadowBlur = 0;
-
-  context.textAlign = 'center';
-  context.textBaseline = 'top';
-  context.font = `bold ${firstFontSize}px ${font}`;
-  context.fillStyle = '#ffffff';
-  context.fillText(lines[0], cx, y + padding);
-
-  if (lines.length > 1) {
-    context.font = `${secondFontSize}px ${font}`;
-    context.fillStyle = '#88bbdd';
-    context.fillText(lines[1], cx, y + padding + firstFontSize + lineGap);
-  }
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number, w: number, h: number, r: number,
-): void {
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-export const GraphView: React.FC<GraphViewProps> = ({
-  graph,
-  onNodeClick,
-  onNodeDoubleClick,
-  onNodeExpand,
-  onOpenSource,
-  onSetRoot,
-  onRemoveNode,
-  sigmaRef,
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const hoveredNodeRef = useRef<string | null>(null);
-  const selectedNodeRef = useRef<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
-    visible: false, x: 0, y: 0, nodeId: '', nodeData: null,
-  });
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const sigma = new Sigma(graph, containerRef.current, {
-      renderLabels: true,
-      labelRenderedSizeThreshold: 0,
-      labelSize: 13,
-      labelWeight: 'bold',
-      defaultEdgeType: 'arrow',
-      edgeLabelSize: 10,
-      zIndex: true,
-      itemSizesReference: 'positions',
-      doubleClickZoomingRatio: 1,
-      defaultDrawNodeLabel: drawRectLabel,
-      defaultDrawNodeHover: drawRectHover,
-      edgeProgramClasses: {
-        arrow: EdgeArrowProgram,
-      },
-      nodeReducer: (node, data) => {
-        const res = { ...data };
-
-        if (hoveredNodeRef.current) {
-          if (node === hoveredNodeRef.current ||
-              graph.hasEdge(hoveredNodeRef.current, node) ||
-              graph.hasEdge(node, hoveredNodeRef.current)) {
-            res.highlighted = true;
-          } else {
-            res.label = '';
-            res.color = `${res.color}40`;
-          }
-        }
-
-        if (selectedNodeRef.current === node) {
-          res.highlighted = true;
-        }
-
-        return res;
-      },
-      edgeReducer: (edge, data) => {
-        const res = { ...data };
-        if (hoveredNodeRef.current) {
-          const [source, target] = graph.extremities(edge);
-          if (source !== hoveredNodeRef.current && target !== hoveredNodeRef.current) {
-            res.hidden = true;
-          }
-        }
-        return res;
-      },
-    });
-
-    sigmaRef.current = sigma;
-
-    sigma.on('clickNode', ({ node }) => {
-      selectedNodeRef.current = node;
-      const attrs = graph.getNodeAttributes(node);
-      const rawLabel = (attrs.label || '').split('\n')[0];
-      onNodeClick({
-        usr: node,
-        label: rawLabel,
-        file: attrs.file || '',
-        line: attrs.line || 0,
-        module: attrs.module || '',
-        nodeType: attrs.nodeType || 'function',
-        signature: attrs.signature,
-        varType: attrs.varType,
-      });
-      sigma.refresh();
-    });
-
-    sigma.on('doubleClickNode', ({ node, preventSigmaDefault }) => {
-      preventSigmaDefault();
-      const attrs = graph.getNodeAttributes(node);
-      if (attrs.file && attrs.line) {
-        onOpenSource?.(attrs.file, attrs.line);
-      } else {
-        onNodeDoubleClick(node);
-      }
-    });
-
-    sigma.on('doubleClickStage', ({ preventSigmaDefault }) => {
-      preventSigmaDefault();
-    });
-
-    sigma.on('enterNode', ({ node }) => {
-      hoveredNodeRef.current = node;
-      containerRef.current!.style.cursor = 'pointer';
-      sigma.refresh();
-    });
-
-    sigma.on('leaveNode', () => {
-      hoveredNodeRef.current = null;
-      containerRef.current!.style.cursor = 'grab';
-      sigma.refresh();
-    });
-
-    sigma.on('clickStage', () => {
-      selectedNodeRef.current = null;
-      setContextMenu(prev => ({ ...prev, visible: false }));
-      sigma.refresh();
-    });
-
-    sigma.on('rightClickNode', ({ node, event }) => {
-      event.original.preventDefault();
-      const attrs = graph.getNodeAttributes(node);
-      const rawLabel = (attrs.label || '').split('\n')[0];
-      const mouseEvent = event.original as MouseEvent;
-      setContextMenu({
-        visible: true,
-        x: mouseEvent.clientX,
-        y: mouseEvent.clientY,
-        nodeId: node,
-        nodeData: {
-          usr: node,
-          label: rawLabel,
-          file: attrs.file || '',
-          line: attrs.line || 0,
-          module: attrs.module || '',
-          nodeType: attrs.nodeType || 'function',
-          signature: attrs.signature,
-          varType: attrs.varType,
-        },
-      });
-    });
-
-    return () => {
-      sigma.kill();
-      sigmaRef.current = null;
-    };
-  }, [graph, onNodeClick, onNodeDoubleClick, onOpenSource, sigmaRef]);
-
-  useEffect(() => {
-    const handler = () => {
-      sigmaRef.current?.refresh();
-    };
-    graph.on('nodeAdded', handler);
-    graph.on('edgeAdded', handler);
-    graph.on('nodeAttributesUpdated', handler);
-
-    return () => {
-      graph.removeListener('nodeAdded', handler);
-      graph.removeListener('edgeAdded', handler);
-      graph.removeListener('nodeAttributesUpdated', handler);
-    };
-  }, [graph, sigmaRef]);
-
-  const closeMenu = useCallback(() => {
-    setContextMenu(prev => ({ ...prev, visible: false }));
-  }, []);
-
-  return (
-    <>
-      <div ref={containerRef} className="graph-container" onContextMenu={e => e.preventDefault()} />
-      {contextMenu.visible && contextMenu.nodeData && (
-        <div
-          className="context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          {contextMenu.nodeData.nodeType === 'function' && (
-            <>
-              <div className="context-item" onClick={() => {
-                onNodeExpand?.(contextMenu.nodeId, 'forward');
-                closeMenu();
-              }}>展开调用 &rarr;</div>
-              <div className="context-item" onClick={() => {
-                onNodeExpand?.(contextMenu.nodeId, 'backward');
-                closeMenu();
-              }}>&larr; 展开调用者</div>
-              <div className="context-item" onClick={() => {
-                onSetRoot?.(contextMenu.nodeId);
-                closeMenu();
-              }}>设为根节点</div>
-            </>
-          )}
-          <div className="context-item" onClick={() => {
-            if (contextMenu.nodeData) onOpenSource?.(contextMenu.nodeData.file, contextMenu.nodeData.line);
-            closeMenu();
-          }}>查看源码</div>
-          <div className="context-item" onClick={() => {
-            onRemoveNode?.(contextMenu.nodeId);
-            closeMenu();
-          }}>从视图移除</div>
-        </div>
-      )}
-    </>
-  );
+/* ── Dagre layout options ── */
+const DAGRE_LAYOUT: any = {
+  name: 'dagre',
+  rankDir: 'LR',
+  nodeSep: 40,
+  rankSep: 180,
+  edgeSep: 20,
+  animate: true,
+  animationDuration: 350,
+  fit: true,
+  padding: 40,
 };
 
-/**
- * Bidirectional horizontal tree layout.
- * Root sits at center (x=0). Out-neighbors (callees) expand rightward (+x),
- * in-neighbors (callers) expand leftward (-x). Y-axis spreads siblings.
- */
-export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
-  if (graph.order === 0) return;
-
-  let root = rootUsr || null;
-  if (!root) {
-    graph.forEachNode((node, attrs) => {
-      if (attrs.isRoot && !root) root = node;
-    });
-  }
-  if (!root) root = graph.nodes()[0];
-
-  const level: Map<string, number> = new Map();
-  const treeChildren: Map<string, string[]> = new Map();
-  level.set(root, 0);
-  treeChildren.set(root, []);
-
-  const fwdQueue: string[] = [root];
-  while (fwdQueue.length > 0) {
-    const node = fwdQueue.shift()!;
-    const d = level.get(node)!;
-    graph.forEachOutNeighbor(node, (neighbor) => {
-      if (!level.has(neighbor)) {
-        level.set(neighbor, d + 1);
-        treeChildren.set(neighbor, []);
-        if (!treeChildren.has(node)) treeChildren.set(node, []);
-        treeChildren.get(node)!.push(neighbor);
-        fwdQueue.push(neighbor);
-      }
-    });
-  }
-
-  const bwdQueue: string[] = [root];
-  while (bwdQueue.length > 0) {
-    const node = bwdQueue.shift()!;
-    const d = level.get(node)!;
-    graph.forEachInNeighbor(node, (neighbor) => {
-      if (!level.has(neighbor)) {
-        level.set(neighbor, d - 1);
-        treeChildren.set(neighbor, []);
-        if (!treeChildren.has(node)) treeChildren.set(node, []);
-        treeChildren.get(node)!.push(neighbor);
-        bwdQueue.push(neighbor);
-      }
-    });
-  }
-
-  graph.forEachNode((node) => {
-    if (!level.has(node)) {
-      level.set(node, 0);
-      treeChildren.set(node, []);
-    }
-  });
-
-  const ySlot: Map<string, number> = new Map();
-  let nextSlot = 0;
-
-  function assignY(node: string): void {
-    const ch = treeChildren.get(node) || [];
-    if (ch.length === 0) {
-      ySlot.set(node, nextSlot);
-      nextSlot += 1;
-      return;
-    }
-    for (const c of ch) {
-      assignY(c);
-    }
-    const first = ySlot.get(ch[0])!;
-    const last = ySlot.get(ch[ch.length - 1])!;
-    ySlot.set(node, (first + last) / 2);
-  }
-
-  assignY(root);
-
-  graph.forEachNode((node) => {
-    if (!ySlot.has(node)) {
-      ySlot.set(node, nextSlot);
-      nextSlot += 1;
-    }
-  });
-
-  const xSpacing = 6;
-  const ySpacing = 3;
-
-  graph.forEachNode((node) => {
-    const lv = level.get(node) ?? 0;
-    const ys = ySlot.get(node) ?? 0;
-    graph.setNodeAttribute(node, 'x', lv * xSpacing);
-    graph.setNodeAttribute(node, 'y', ys * ySpacing);
-  });
+/* ── Helper: extract NodeData from a Cytoscape node ── */
+function nodeDataFromCy(node: NodeSingular): NodeData {
+  const d = node.data();
+  const rawLabel = (d.label || '').split('\n')[0];
+  return {
+    usr: d.id,
+    label: rawLabel,
+    file: d.file || '',
+    line: d.line || 0,
+    module: d.module || '',
+    nodeType: d.nodeType || 'function',
+    signature: d.signature,
+    varType: d.varType,
+  };
 }
+
+/* ── Component ── */
+export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
+  ({ onNodeSelect, onOpenSource, onExpandNode, onSetRoot }, ref) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const cyRef = useRef<Core | null>(null);
+    const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+      visible: false, x: 0, y: 0, nodeId: '', nodeData: null,
+    });
+
+    /* ── Initialize Cytoscape ── */
+    useEffect(() => {
+      if (!containerRef.current) return;
+
+      const cy = cytoscape({
+        container: containerRef.current,
+        elements: [],
+        style: CY_STYLE,
+        layout: { name: 'preset' },
+        boxSelectionEnabled: true,
+        selectionType: 'additive',
+        userZoomingEnabled: true,
+        userPanningEnabled: true,
+        minZoom: 0.1,
+        maxZoom: 5,
+        wheelSensitivity: 0.3,
+      });
+
+      cyRef.current = cy;
+
+      /* Single click → show info */
+      cy.on('tap', 'node', (event: EventObject) => {
+        const node = event.target as NodeSingular;
+        onNodeSelect(nodeDataFromCy(node));
+      });
+
+      /* Click on empty area → deselect, close menu */
+      cy.on('tap', (event: EventObject) => {
+        if (event.target === cy) {
+          onNodeSelect(null);
+          setContextMenu(prev => ({ ...prev, visible: false }));
+        }
+      });
+
+      /* Double click → jump to source code */
+      cy.on('dbltap', 'node', (event: EventObject) => {
+        const d = (event.target as NodeSingular).data();
+        if (d.file && d.line) {
+          onOpenSource(d.file, d.line);
+        }
+      });
+
+      /* Right click → context menu */
+      cy.on('cxttap', 'node', (event: EventObject) => {
+        const node = event.target as NodeSingular;
+        const domEvent = event.originalEvent as MouseEvent;
+        setContextMenu({
+          visible: true,
+          x: domEvent.clientX,
+          y: domEvent.clientY,
+          nodeId: node.id(),
+          nodeData: nodeDataFromCy(node),
+        });
+      });
+
+      /* Prevent browser context menu on the container */
+      containerRef.current.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      return () => {
+        cy.destroy();
+        cyRef.current = null;
+      };
+    }, [onNodeSelect, onOpenSource]);
+
+    /* ── Keyboard shortcuts ── */
+    useEffect(() => {
+      const handler = (e: KeyboardEvent) => {
+        const cy = cyRef.current;
+        if (!cy) return;
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          cy.elements(':selected').remove();
+        }
+      };
+      window.addEventListener('keydown', handler);
+      return () => window.removeEventListener('keydown', handler);
+    }, []);
+
+    /* ── Expose methods via ref ── */
+    const runLayout = useCallback(() => {
+      const cy = cyRef.current;
+      if (!cy || cy.elements().length === 0) return;
+      cy.layout(DAGRE_LAYOUT).run();
+    }, []);
+
+    useImperativeHandle(ref, () => ({
+      loadCallGraph(nodes: CyNodeData[], edges: CyEdgeData[]) {
+        const cy = cyRef.current;
+        if (!cy) return;
+        cy.elements().remove();
+        cy.add(nodes.map(n => ({ group: 'nodes' as const, data: n })));
+        cy.add(edges.map(e => ({
+          group: 'edges' as const,
+          data: { ...e, id: `${e.source}->${e.target}` },
+        })));
+        cy.layout(DAGRE_LAYOUT).run();
+      },
+
+      loadDataFlow(nodes: CyNodeData[], edges: CyEdgeData[]) {
+        const cy = cyRef.current;
+        if (!cy) return;
+        cy.elements().remove();
+        cy.add(nodes.map(n => ({ group: 'nodes' as const, data: n })));
+        cy.add(edges.map((e, i) => ({
+          group: 'edges' as const,
+          data: { ...e, id: `df-${e.source}->${e.target}-${i}` },
+        })));
+        cy.layout(DAGRE_LAYOUT).run();
+      },
+
+      addNodes(nodes: CyNodeData[], edges: CyEdgeData[]) {
+        const cy = cyRef.current;
+        if (!cy) return;
+        const existingIds = new Set(cy.nodes().map(n => n.id()));
+        const newNodes = nodes.filter(n => !existingIds.has(n.id));
+        const existingEdges = new Set(cy.edges().map(e => e.id()));
+        const newEdges = edges.filter(e => {
+          const eid = `${e.source}->${e.target}`;
+          return !existingEdges.has(eid) && (existingIds.has(e.source) || newNodes.some(n => n.id === e.source))
+            && (existingIds.has(e.target) || newNodes.some(n => n.id === e.target));
+        });
+        if (newNodes.length > 0) {
+          cy.add(newNodes.map(n => ({ group: 'nodes' as const, data: n })));
+        }
+        if (newEdges.length > 0) {
+          cy.add(newEdges.map(e => ({
+            group: 'edges' as const,
+            data: { ...e, id: `${e.source}->${e.target}` },
+          })));
+        }
+        cy.layout(DAGRE_LAYOUT).run();
+      },
+
+      zoomIn() {
+        const cy = cyRef.current;
+        if (cy) cy.zoom({ level: cy.zoom() * 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+      },
+
+      zoomOut() {
+        const cy = cyRef.current;
+        if (cy) cy.zoom({ level: cy.zoom() / 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+      },
+
+      fitView() {
+        cyRef.current?.fit(undefined, 40);
+      },
+
+      reLayout() {
+        runLayout();
+      },
+
+      exportPNG() {
+        const cy = cyRef.current;
+        if (!cy) return;
+        const png = cy.png({ full: true, bg: '#1e1e1e', scale: 2 });
+        const link = document.createElement('a');
+        link.download = 'codesage-graph.png';
+        link.href = png;
+        link.click();
+      },
+
+      removeSelected() {
+        cyRef.current?.elements(':selected').remove();
+      },
+    }), [runLayout]);
+
+    /* ── Context menu actions ── */
+    const closeMenu = useCallback(() => {
+      setContextMenu(prev => ({ ...prev, visible: false }));
+    }, []);
+
+    return (
+      <>
+        <div ref={containerRef} className="graph-container" />
+        {contextMenu.visible && contextMenu.nodeData && (
+          <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+            {contextMenu.nodeData.nodeType === 'function' && (
+              <>
+                <div className="context-item" onClick={() => {
+                  onExpandNode(contextMenu.nodeId, 'forward');
+                  closeMenu();
+                }}>展开调用 &rarr;</div>
+                <div className="context-item" onClick={() => {
+                  onExpandNode(contextMenu.nodeId, 'backward');
+                  closeMenu();
+                }}>&larr; 展开调用者</div>
+                <div className="context-item" onClick={() => {
+                  onSetRoot(contextMenu.nodeId);
+                  closeMenu();
+                }}>设为根节点</div>
+              </>
+            )}
+            <div className="context-item" onClick={() => {
+              if (contextMenu.nodeData) onOpenSource(contextMenu.nodeData.file, contextMenu.nodeData.line);
+              closeMenu();
+            }}>查看源码</div>
+            <div className="context-item" onClick={() => {
+              cyRef.current?.getElementById(contextMenu.nodeId).remove();
+              closeMenu();
+            }}>从视图移除</div>
+            <div className="context-item" onClick={() => {
+              cyRef.current?.elements(':selected').remove();
+              closeMenu();
+            }}>删除选中节点</div>
+          </div>
+        )}
+      </>
+    );
+  },
+);
+
+GraphView.displayName = 'GraphView';
