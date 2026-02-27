@@ -25,86 +25,12 @@ interface GraphViewProps {
   sigmaRef: React.MutableRefObject<Sigma | null>;
 }
 
-/* ── Rect bounds computation (shared by renderer & hit-test) ── */
-
-interface RectBounds {
-  left: number; top: number; width: number; height: number;
-}
-
-function computeRectBounds(
-  x: number, y: number, projectedSize: number,
-  label: string,
-  measureCtx: CanvasRenderingContext2D,
-): RectBounds | null {
-  if (!label) return null;
-
-  const scale = Math.max(projectedSize / 10, 0.6);
-  const fontSize = Math.max(Math.round(13 * scale), 8);
-  const secondFontSize = Math.max(fontSize - 2, 7);
-  const padding = Math.max(Math.round(6 * scale), 3);
-  const lineGap = Math.max(Math.round(3 * scale), 2);
-  const lines = label.split('\n');
-
-  measureCtx.font = `bold ${fontSize}px sans-serif`;
-  let maxWidth = measureCtx.measureText(lines[0]).width;
-  if (lines.length > 1) {
-    measureCtx.font = `${secondFontSize}px sans-serif`;
-    const w2 = measureCtx.measureText(lines[1]).width;
-    if (w2 > maxWidth) maxWidth = w2;
-  }
-
-  const boxWidth = maxWidth + padding * 2;
-  const totalTextH = lines.length > 1
-    ? fontSize + lineGap + secondFontSize
-    : fontSize;
-  const boxHeight = totalTextH + padding * 2;
-
-  return {
-    left: x - boxWidth / 2,
-    top: y - boxHeight / 2,
-    width: boxWidth,
-    height: boxHeight,
-  };
-}
-
-function hitTestNodeRect(
-  sigma: Sigma,
-  graph: Graph,
-  measureCtx: CanvasRenderingContext2D,
-  containerRect: DOMRect,
-  clientX: number,
-  clientY: number,
-): string | null {
-  const mx = clientX - containerRect.left;
-  const my = clientY - containerRect.top;
-
-  const nodes = graph.nodes();
-  for (const node of nodes) {
-    const dd = sigma.getNodeDisplayData(node);
-    if (!dd || dd.hidden) continue;
-
-    const label = graph.getNodeAttribute(node, 'label') as string;
-    if (!label) continue;
-
-    const bounds = computeRectBounds(dd.x, dd.y, dd.size, label, measureCtx);
-    if (!bounds) continue;
-
-    if (mx >= bounds.left && mx <= bounds.left + bounds.width &&
-        my >= bounds.top && my <= bounds.top + bounds.height) {
-      return node;
-    }
-  }
-  return null;
-}
-
-/* ── Label & hover renderers ── */
-
 function drawRectLabel(
   context: CanvasRenderingContext2D,
   data: PartialButFor<NodeDisplayData, 'x' | 'y' | 'size' | 'label' | 'color'>,
   settings: Settings,
 ): void {
-  if (!data.label || data.highlighted) return;
+  if (!data.label) return;
 
   const scale = Math.max(data.size / 10, 0.6);
   const fontSize = Math.max(Math.round(13 * scale), 8);
@@ -135,7 +61,7 @@ function drawRectLabel(
   const y = cy - boxHeight / 2;
 
   context.fillStyle = data.highlighted ? '#2a3a4a' : '#1e2a36';
-  context.strokeStyle = data.color || '#555';
+  context.strokeStyle = (data as any).borderColor || '#555';
   context.lineWidth = data.highlighted ? 2.5 : 1.5;
   context.beginPath();
   roundRect(context, x, y, boxWidth, boxHeight, 4);
@@ -232,24 +158,6 @@ function roundRect(
   ctx.closePath();
 }
 
-/* ── Helper: extract NodeData from graph attributes ── */
-
-function nodeDataFromAttrs(node: string, graph: Graph): NodeData {
-  const attrs = graph.getNodeAttributes(node);
-  return {
-    usr: node,
-    label: ((attrs.label as string) || '').split('\n')[0],
-    file: (attrs.file as string) || '',
-    line: (attrs.line as number) || 0,
-    module: (attrs.module as string) || '',
-    nodeType: (attrs.nodeType as 'function' | 'variable') || 'function',
-    signature: attrs.signature as string | undefined,
-    varType: attrs.varType as string | undefined,
-  };
-}
-
-/* ── Component ── */
-
 export const GraphView: React.FC<GraphViewProps> = ({
   graph,
   onNodeClick,
@@ -263,7 +171,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const hoveredNodeRef = useRef<string | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
-  const measureCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false, x: 0, y: 0, nodeId: '', nodeData: null,
   });
@@ -271,12 +178,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const measureCanvas = document.createElement('canvas');
-    const measureCtx = measureCanvas.getContext('2d')!;
-    measureCtxRef.current = measureCtx;
-    const container = containerRef.current;
-
-    const sigma = new Sigma(graph, container, {
+    const sigma = new Sigma(graph, containerRef.current, {
       renderLabels: true,
       labelRenderedSizeThreshold: 0,
       labelSize: 13,
@@ -295,9 +197,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
       edgeProgramClasses: {
         arrow: EdgeArrowProgram,
       },
+      nodeHoverProgramClasses: {},
       nodeReducer: (node, data) => {
         const res = { ...data };
-        res.color = '#00000000';
+        (res as any).borderColor = res.color;
+        res.color = '#1e1e1e';
 
         if (hoveredNodeRef.current) {
           if (node === hoveredNodeRef.current ||
@@ -329,99 +233,80 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     sigmaRef.current = sigma;
 
-    /* ── Rect-based hit testing replaces Sigma's circle-based events ── */
-
-    function hitNode(e: MouseEvent | TouchEvent): string | null {
-      let cx: number, cy: number;
-      if ('clientX' in e) {
-        cx = e.clientX;
-        cy = e.clientY;
-      } else if (e.touches.length > 0) {
-        cx = e.touches[0].clientX;
-        cy = e.touches[0].clientY;
-      } else {
-        return null;
-      }
-      return hitTestNodeRect(sigma, graph, measureCtx, container.getBoundingClientRect(), cx, cy);
-    }
-
-    const handleClick = (original: MouseEvent | TouchEvent) => {
-      const node = hitNode(original);
-      if (node) {
-        selectedNodeRef.current = node;
-        onNodeClick(nodeDataFromAttrs(node, graph));
-      } else {
-        selectedNodeRef.current = null;
-        setContextMenu(prev => ({ ...prev, visible: false }));
-      }
+    sigma.on('clickNode', ({ node }) => {
+      selectedNodeRef.current = node;
+      const attrs = graph.getNodeAttributes(node);
+      const rawLabel = (attrs.label || '').split('\n')[0];
+      onNodeClick({
+        usr: node,
+        label: rawLabel,
+        file: attrs.file || '',
+        line: attrs.line || 0,
+        module: attrs.module || '',
+        nodeType: attrs.nodeType || 'function',
+        signature: attrs.signature,
+        varType: attrs.varType,
+      });
       sigma.refresh();
-    };
+    });
 
-    const handleDoubleClick = (original: MouseEvent | TouchEvent) => {
-      const node = hitNode(original);
-      if (node) {
-        const attrs = graph.getNodeAttributes(node);
-        if (attrs.file && attrs.line) {
-          onOpenSource?.(attrs.file, attrs.line);
-        } else {
-          onNodeDoubleClick(node);
-        }
-      }
-    };
-
-    const handleRightClick = (original: MouseEvent | TouchEvent) => {
-      const node = hitNode(original);
-      if (node) {
-        original.preventDefault();
-        const nd = nodeDataFromAttrs(node, graph);
-        const me = original as MouseEvent;
-        setContextMenu({
-          visible: true,
-          x: me.clientX,
-          y: me.clientY,
-          nodeId: node,
-          nodeData: nd,
-        });
+    sigma.on('doubleClickNode', ({ node, event }) => {
+      event.preventSigmaDefault();
+      const attrs = graph.getNodeAttributes(node);
+      if (attrs.file && attrs.line) {
+        onOpenSource?.(attrs.file, attrs.line);
       } else {
-        setContextMenu(prev => ({ ...prev, visible: false }));
+        onNodeDoubleClick(node);
       }
-    };
-
-    sigma.on('clickStage', ({ event }) => handleClick(event.original));
-    sigma.on('clickNode', ({ event }) => handleClick(event.original));
+    });
 
     sigma.on('doubleClickStage', ({ event }) => {
       event.preventSigmaDefault();
-      handleDoubleClick(event.original);
-    });
-    sigma.on('doubleClickNode', ({ event }) => {
-      event.preventSigmaDefault();
-      handleDoubleClick(event.original);
     });
 
-    sigma.on('rightClickStage', ({ event }) => {
-      event.preventSigmaDefault();
-      handleRightClick(event.original);
-    });
-    sigma.on('rightClickNode', ({ event }) => {
-      event.preventSigmaDefault();
-      handleRightClick(event.original);
+    sigma.on('enterNode', ({ node }) => {
+      hoveredNodeRef.current = node;
+      containerRef.current!.style.cursor = 'pointer';
+      sigma.refresh();
     });
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (e.buttons !== 0) return;
-      const node = hitNode(e);
-      if (node !== hoveredNodeRef.current) {
-        hoveredNodeRef.current = node;
-        container.style.cursor = node ? 'pointer' : 'grab';
-        sigma.refresh();
-      }
-    };
+    sigma.on('leaveNode', () => {
+      hoveredNodeRef.current = null;
+      containerRef.current!.style.cursor = 'grab';
+      sigma.refresh();
+    });
 
-    container.addEventListener('mousemove', handleMouseMove);
+    sigma.on('clickStage', () => {
+      selectedNodeRef.current = null;
+      setContextMenu(prev => ({ ...prev, visible: false }));
+      sigma.refresh();
+    });
+
+    sigma.on('rightClickNode', ({ node, event }) => {
+      event.original.preventDefault();
+      event.preventSigmaDefault();
+      const attrs = graph.getNodeAttributes(node);
+      const rawLabel = (attrs.label || '').split('\n')[0];
+      const mouseEvent = event.original as MouseEvent;
+      setContextMenu({
+        visible: true,
+        x: mouseEvent.clientX,
+        y: mouseEvent.clientY,
+        nodeId: node,
+        nodeData: {
+          usr: node,
+          label: rawLabel,
+          file: attrs.file || '',
+          line: attrs.line || 0,
+          module: attrs.module || '',
+          nodeType: attrs.nodeType || 'function',
+          signature: attrs.signature,
+          varType: attrs.varType,
+        },
+      });
+    });
 
     return () => {
-      container.removeEventListener('mousemove', handleMouseMove);
       sigma.kill();
       sigmaRef.current = null;
     };
