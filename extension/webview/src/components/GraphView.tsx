@@ -350,6 +350,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
   );
 };
 
+/**
+ * Bidirectional horizontal tree layout.
+ * Root sits at center (x=0). Out-neighbors (callees) expand rightward (+x),
+ * in-neighbors (callers) expand leftward (-x). Y-axis spreads siblings.
+ */
 export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
   if (graph.order === 0) return;
 
@@ -361,75 +366,88 @@ export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
   }
   if (!root) root = graph.nodes()[0];
 
-  const depth: Map<string, number> = new Map();
-  const parent: Map<string, string | null> = new Map();
-  const children: Map<string, string[]> = new Map();
-  const queue: string[] = [root];
-  depth.set(root, 0);
-  parent.set(root, null);
-  children.set(root, []);
+  const level: Map<string, number> = new Map();
+  const treeChildren: Map<string, string[]> = new Map();
+  level.set(root, 0);
+  treeChildren.set(root, []);
 
-  while (queue.length > 0) {
-    const node = queue.shift()!;
-    const d = depth.get(node)!;
-
+  // BFS along out-edges → positive levels (rightward)
+  const fwdQueue: string[] = [root];
+  while (fwdQueue.length > 0) {
+    const node = fwdQueue.shift()!;
+    const d = level.get(node)!;
     graph.forEachOutNeighbor(node, (neighbor) => {
-      if (!depth.has(neighbor)) {
-        depth.set(neighbor, d + 1);
-        parent.set(neighbor, node);
-        children.set(neighbor, []);
-        if (!children.has(node)) children.set(node, []);
-        children.get(node)!.push(neighbor);
-        queue.push(neighbor);
-      }
-    });
-
-    graph.forEachInNeighbor(node, (neighbor) => {
-      if (!depth.has(neighbor)) {
-        depth.set(neighbor, d + 1);
-        parent.set(neighbor, node);
-        children.set(neighbor, []);
-        if (!children.has(node)) children.set(node, []);
-        children.get(node)!.push(neighbor);
-        queue.push(neighbor);
+      if (!level.has(neighbor)) {
+        level.set(neighbor, d + 1);
+        treeChildren.set(neighbor, []);
+        if (!treeChildren.has(node)) treeChildren.set(node, []);
+        treeChildren.get(node)!.push(neighbor);
+        fwdQueue.push(neighbor);
       }
     });
   }
 
+  // BFS along in-edges → negative levels (leftward)
+  const bwdQueue: string[] = [root];
+  while (bwdQueue.length > 0) {
+    const node = bwdQueue.shift()!;
+    const d = level.get(node)!;
+    graph.forEachInNeighbor(node, (neighbor) => {
+      if (!level.has(neighbor)) {
+        level.set(neighbor, d - 1);
+        treeChildren.set(neighbor, []);
+        if (!treeChildren.has(node)) treeChildren.set(node, []);
+        treeChildren.get(node)!.push(neighbor);
+        bwdQueue.push(neighbor);
+      }
+    });
+  }
+
+  // Handle disconnected nodes
   graph.forEachNode((node) => {
-    if (!depth.has(node)) {
-      depth.set(node, 0);
-      children.set(node, []);
+    if (!level.has(node)) {
+      level.set(node, 0);
+      treeChildren.set(node, []);
     }
   });
 
-  const xPos: Map<string, number> = new Map();
-  let nextX = 0;
+  // Assign vertical (y) positions using a post-order walk.
+  // Each leaf gets the next slot; inner nodes center over their children.
+  const ySlot: Map<string, number> = new Map();
+  let nextSlot = 0;
 
-  function assignX(node: string): void {
-    const ch = children.get(node) || [];
+  function assignY(node: string): void {
+    const ch = treeChildren.get(node) || [];
     if (ch.length === 0) {
-      xPos.set(node, nextX);
-      nextX += 1;
+      ySlot.set(node, nextSlot);
+      nextSlot += 1;
       return;
     }
     for (const c of ch) {
-      assignX(c);
+      assignY(c);
     }
-    const first = xPos.get(ch[0])!;
-    const last = xPos.get(ch[ch.length - 1])!;
-    xPos.set(node, (first + last) / 2);
+    const first = ySlot.get(ch[0])!;
+    const last = ySlot.get(ch[ch.length - 1])!;
+    ySlot.set(node, (first + last) / 2);
   }
 
-  assignX(root);
+  assignY(root);
 
-  const xSpacing = 4;
-  const ySpacing = 4;
+  // Nodes not reached by tree walk (disconnected) get appended at the bottom
+  graph.forEachNode((node) => {
+    if (!ySlot.has(node)) {
+      ySlot.set(node, nextSlot);
+      nextSlot += 1;
+    }
+  });
+
+  const xSpacing = 6;
+  const ySpacing = 3;
 
   graph.forEachNode((node) => {
-    const d = depth.get(node) ?? 0;
-    const x = (xPos.get(node) ?? 0) * xSpacing;
-    graph.setNodeAttribute(node, 'x', x);
-    graph.setNodeAttribute(node, 'y', d * ySpacing);
+    const lv = level.get(node) ?? 0;
+    const ys = ySlot.get(node) ?? 0;
+    graph.setNodeAttribute(node, 'x', lv * xSpacing);
+    graph.setNodeAttribute(node, 'y', ys * ySpacing);
   });
 }
