@@ -24,6 +24,12 @@ export async function searchFunction(
       return;
     }
 
+    if (results.length === 1) {
+      logger.info('Single result, opening graph directly', { name: results[0].name });
+      onSelect(results[0]);
+      return;
+    }
+
     const items = results.map(f => ({
       label: f.name,
       description: `${f.module} — ${f.file}:${f.line}`,
@@ -32,29 +38,13 @@ export async function searchFunction(
     }));
 
     const selected = await vscode.window.showQuickPick(items, {
-      placeHolder: '选择函数查看调用链',
+      placeHolder: '选择函数查看调用图谱',
       matchOnDescription: true,
     });
 
     if (selected) {
       logger.info('Function selected', { name: selected.func.name, usr: selected.func.usr });
-
-      const action = await vscode.window.showQuickPick([
-        { label: '查看正向调用链', value: 'forward' },
-        { label: '查看反向调用链', value: 'backward' },
-        { label: '跳转到源码', value: 'goto' },
-      ], { placeHolder: '选择操作' });
-
-      if (action?.value === 'goto') {
-        const uri = vscode.Uri.file(selected.func.file);
-        const position = new vscode.Position(selected.func.line - 1, 0);
-        const doc = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showTextDocument(doc, {
-          selection: new vscode.Range(position, position),
-        });
-      } else if (action) {
-        onSelect(selected.func);
-      }
+      onSelect(selected.func);
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

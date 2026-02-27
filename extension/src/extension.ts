@@ -118,40 +118,61 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const client = await getClient();
-      const cursorFile = editor.document.uri.fsPath;
+      const filePath = editor.document.uri.fsPath;
       const cursorLine = selection.active.line + 1;
+
+      logger.info('searchFunctionAtCursor', { word, filePath, cursorLine });
 
       try {
         const results = await client.searchFunctions(word);
+
         if (results.length === 0) {
           vscode.window.showInformationMessage(`未找到匹配 "${word}" 的函数`);
           return;
         }
 
-        // Auto-match: same file + closest to cursor line
-        const sameFile = results.filter(f => cursorFile.endsWith(f.file) || f.file.endsWith(path.basename(cursorFile)));
         let matched: FunctionInfo | undefined;
 
+        // Exact match: same file, same name
+        const sameFile = results.filter(f => f.file === filePath);
         if (sameFile.length === 1) {
           matched = sameFile[0];
         } else if (sameFile.length > 1) {
+          // Multiple in same file → closest line
           matched = sameFile.reduce((best, f) =>
             Math.abs(f.line - cursorLine) < Math.abs(best.line - cursorLine) ? f : best
           );
-        } else if (results.length === 1) {
-          matched = results[0];
+        }
+
+        // Fallback: exact name match across all files
+        if (!matched) {
+          const exactName = results.filter(f => f.name === word);
+          if (exactName.length === 1) {
+            matched = exactName[0];
+          }
+        }
+
+        // Still ambiguous → let user pick, then go directly to graph
+        if (!matched) {
+          const items = results.map(f => ({
+            label: f.name,
+            description: `${f.file}:${f.line}`,
+            detail: f.signature || f.usr,
+            func: f,
+          }));
+          const pick = await vscode.window.showQuickPick(items, {
+            placeHolder: '多个匹配，选择目标函数查看调用图谱',
+          });
+          if (pick) matched = pick.func;
         }
 
         if (matched) {
-          logger.info('Auto-matched function', { name: matched.name, file: matched.file, line: matched.line });
+          logger.info('Function matched', { name: matched.name, usr: matched.usr, file: matched.file, line: matched.line });
           showFunctionInGraph(matched);
-        } else {
-          // Multiple matches in other files, fall back to QuickPick
-          searchFunction(client, showFunctionInGraph, word);
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`搜索失败: ${msg}`);
+        vscode.window.showErrorMessage(`搜索函数失败: ${msg}`);
         logger.error('searchFunctionAtCursor failed', msg);
       }
     }),
