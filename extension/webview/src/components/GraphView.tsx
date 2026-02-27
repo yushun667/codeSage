@@ -60,8 +60,9 @@ function drawRectLabel(
   const x = cx - boxWidth / 2;
   const y = cy - boxHeight / 2;
 
+  const borderColor = data.borderColor || data.color || '#555';
   context.fillStyle = data.highlighted ? '#2a3a4a' : '#1e2a36';
-  context.strokeStyle = data.color || '#555';
+  context.strokeStyle = borderColor;
   context.lineWidth = data.highlighted ? 2.5 : 1.5;
   context.beginPath();
   roundRect(context, x, y, boxWidth, boxHeight, 4);
@@ -117,10 +118,11 @@ function drawRectHover(
   const x = cx - boxWidth / 2;
   const y = cy - boxHeight / 2;
 
+  const borderColor = data.borderColor || data.color || '#007acc';
   context.shadowColor = 'rgba(0,122,204,0.5)';
   context.shadowBlur = 10;
   context.fillStyle = '#1a3050';
-  context.strokeStyle = '#007acc';
+  context.strokeStyle = borderColor;
   context.lineWidth = 2.5;
   context.beginPath();
   roundRect(context, x, y, boxWidth, boxHeight, 4);
@@ -199,6 +201,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       },
       nodeReducer: (node, data) => {
         const res = { ...data };
+        res.borderColor = res.color;
+        res.color = '#1e2a36';
 
         if (hoveredNodeRef.current) {
           if (node === hoveredNodeRef.current ||
@@ -207,7 +211,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
             res.highlighted = true;
           } else {
             res.label = '';
-            res.color = `${res.color}40`;
           }
         }
 
