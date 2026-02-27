@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import Sigma from 'sigma';
 import Graph from 'graphology';
+import { EdgeArrowProgram } from 'sigma/rendering';
 import { NodeData } from './NodeDetails';
 import type { Settings } from 'sigma/settings';
 import type { NodeDisplayData, PartialButFor } from 'sigma/types';
@@ -31,16 +32,16 @@ function drawRectLabel(
 ): void {
   if (!data.label) return;
 
-  const fontSize = settings.labelSize || 13;
+  const scale = Math.max(data.size / 10, 0.6);
+  const fontSize = Math.max(Math.round(13 * scale), 8);
   const font = settings.labelFont || 'sans-serif';
   const lines = data.label.split('\n');
 
-  const padding = 6;
-  const lineGap = 3;
-  const firstFontSize = fontSize;
-  const secondFontSize = fontSize - 2;
+  const padding = Math.max(Math.round(6 * scale), 3);
+  const lineGap = Math.max(Math.round(3 * scale), 2);
+  const secondFontSize = Math.max(fontSize - 2, 7);
 
-  context.font = `bold ${firstFontSize}px ${font}`;
+  context.font = `bold ${fontSize}px ${font}`;
   let maxWidth = context.measureText(lines[0]).width;
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
@@ -50,8 +51,8 @@ function drawRectLabel(
 
   const boxWidth = maxWidth + padding * 2;
   const totalTextHeight = lines.length > 1
-    ? firstFontSize + lineGap + secondFontSize
-    : firstFontSize;
+    ? fontSize + lineGap + secondFontSize
+    : fontSize;
   const boxHeight = totalTextHeight + padding * 2;
 
   const cx = data.x;
@@ -70,14 +71,14 @@ function drawRectLabel(
   context.textAlign = 'center';
   context.textBaseline = 'top';
 
-  context.font = `bold ${firstFontSize}px ${font}`;
+  context.font = `bold ${fontSize}px ${font}`;
   context.fillStyle = '#e0e0e0';
   context.fillText(lines[0], cx, y + padding);
 
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
     context.fillStyle = '#8899aa';
-    context.fillText(lines[1], cx, y + padding + firstFontSize + lineGap);
+    context.fillText(lines[1], cx, y + padding + fontSize + lineGap);
   }
 }
 
@@ -88,16 +89,16 @@ function drawRectHover(
 ): void {
   if (!data.label) return;
 
-  const fontSize = settings.labelSize || 13;
+  const scale = Math.max(data.size / 10, 0.6);
+  const fontSize = Math.max(Math.round(14 * scale), 9);
   const font = settings.labelFont || 'sans-serif';
   const lines = data.label.split('\n');
 
-  const padding = 8;
-  const lineGap = 3;
-  const firstFontSize = fontSize;
-  const secondFontSize = fontSize - 2;
+  const padding = Math.max(Math.round(8 * scale), 4);
+  const lineGap = Math.max(Math.round(3 * scale), 2);
+  const secondFontSize = Math.max(fontSize - 2, 7);
 
-  context.font = `bold ${firstFontSize}px ${font}`;
+  context.font = `bold ${fontSize}px ${font}`;
   let maxWidth = context.measureText(lines[0]).width;
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
@@ -107,8 +108,8 @@ function drawRectHover(
 
   const boxWidth = maxWidth + padding * 2;
   const totalTextHeight = lines.length > 1
-    ? firstFontSize + lineGap + secondFontSize
-    : firstFontSize;
+    ? fontSize + lineGap + secondFontSize
+    : fontSize;
   const boxHeight = totalTextHeight + padding * 2;
 
   const cx = data.x;
@@ -130,14 +131,14 @@ function drawRectHover(
   context.textAlign = 'center';
   context.textBaseline = 'top';
 
-  context.font = `bold ${firstFontSize}px ${font}`;
+  context.font = `bold ${fontSize}px ${font}`;
   context.fillStyle = '#ffffff';
   context.fillText(lines[0], cx, y + padding);
 
   if (lines.length > 1) {
     context.font = `${secondFontSize}px ${font}`;
     context.fillStyle = '#88bbdd';
-    context.fillText(lines[1], cx, y + padding + firstFontSize + lineGap);
+    context.fillText(lines[1], cx, y + padding + fontSize + lineGap);
   }
 }
 
@@ -182,15 +183,22 @@ export const GraphView: React.FC<GraphViewProps> = ({
       labelRenderedSizeThreshold: 0,
       labelSize: 13,
       labelWeight: 'bold',
+      labelDensity: 1,
+      labelGridCellSize: 100,
       defaultEdgeType: 'arrow',
       edgeLabelSize: 10,
       zIndex: true,
+      itemSizesReference: 'positions',
+      minEdgeThickness: 0.5,
+      doubleClickZoomingRatio: 1,
+      doubleClickZoomingDuration: 0,
       defaultDrawNodeLabel: drawRectLabel,
       defaultDrawNodeHover: drawRectHover,
+      edgeProgramClasses: {
+        arrow: EdgeArrowProgram,
+      },
       nodeReducer: (node, data) => {
         const res = { ...data };
-        res.size = 2;
-        res.color = 'transparent';
 
         if (hoveredNodeRef.current) {
           if (node === hoveredNodeRef.current ||
@@ -199,6 +207,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
             res.highlighted = true;
           } else {
             res.label = '';
+            res.color = `${res.color}40`;
           }
         }
 
@@ -239,7 +248,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       sigma.refresh();
     });
 
-    sigma.on('doubleClickNode', ({ node }) => {
+    sigma.on('doubleClickNode', ({ node, event }) => {
+      event.preventSigmaDefault();
       const attrs = graph.getNodeAttributes(node);
       if (attrs.file && attrs.line) {
         onOpenSource?.(attrs.file, attrs.line);
@@ -248,13 +258,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
       }
     });
 
+    sigma.on('doubleClickStage', ({ event }) => {
+      event.preventSigmaDefault();
+    });
+
     sigma.on('enterNode', ({ node }) => {
       hoveredNodeRef.current = node;
+      containerRef.current!.style.cursor = 'pointer';
       sigma.refresh();
     });
 
     sigma.on('leaveNode', () => {
       hoveredNodeRef.current = null;
+      containerRef.current!.style.cursor = 'grab';
       sigma.refresh();
     });
 
@@ -266,6 +282,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     sigma.on('rightClickNode', ({ node, event }) => {
       event.original.preventDefault();
+      event.preventSigmaDefault();
       const attrs = graph.getNodeAttributes(node);
       const rawLabel = (attrs.label || '').split('\n')[0];
       const mouseEvent = event.original as MouseEvent;
@@ -371,7 +388,6 @@ export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
   level.set(root, 0);
   treeChildren.set(root, []);
 
-  // BFS along out-edges → positive levels (rightward)
   const fwdQueue: string[] = [root];
   while (fwdQueue.length > 0) {
     const node = fwdQueue.shift()!;
@@ -387,7 +403,6 @@ export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
     });
   }
 
-  // BFS along in-edges → negative levels (leftward)
   const bwdQueue: string[] = [root];
   while (bwdQueue.length > 0) {
     const node = bwdQueue.shift()!;
@@ -403,7 +418,6 @@ export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
     });
   }
 
-  // Handle disconnected nodes
   graph.forEachNode((node) => {
     if (!level.has(node)) {
       level.set(node, 0);
@@ -411,8 +425,6 @@ export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
     }
   });
 
-  // Assign vertical (y) positions using a post-order walk.
-  // Each leaf gets the next slot; inner nodes center over their children.
   const ySlot: Map<string, number> = new Map();
   let nextSlot = 0;
 
@@ -433,7 +445,6 @@ export function runTreeLayout(graph: Graph, rootUsr?: string | null): void {
 
   assignY(root);
 
-  // Nodes not reached by tree walk (disconnected) get appended at the bottom
   graph.forEachNode((node) => {
     if (!ySlot.has(node)) {
       ySlot.set(node, nextSlot);
