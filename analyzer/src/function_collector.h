@@ -2,10 +2,15 @@
 
 #include <string>
 #include <vector>
+#include <set>
+#include <deque>
 #include <unordered_set>
 
 #include <clang/ASTMatchers/ASTMatchFinder.h>
 #include <clang/AST/Decl.h>
+#include <clang/AST/DeclCXX.h>
+#include <clang/AST/ExprCXX.h>
+#include <clang/AST/Expr.h>
 
 #include "generated/codesage.pb.h"
 
@@ -41,18 +46,29 @@ private:
 
 class CallExprCallback : public clang::ast_matchers::MatchFinder::MatchCallback {
 public:
-    CallExprCallback(Storage& storage);
+    CallExprCallback(Storage& storage, const std::string& project_root = "");
 
     void run(const clang::ast_matchers::MatchFinder::MatchResult& result) override;
 
     size_t getCollectedCount() const { return collected_count_; }
+    size_t getSkippedCount() const { return skipped_count_; }
 
 private:
     std::string getUSR(const clang::Decl* decl);
 
+    template <typename ExprT>
+    bool findCallerAndStore(clang::ASTContext& ctx, clang::SourceManager& sm,
+                            const ExprT& expr,
+                            const clang::FunctionDecl* callee_decl,
+                            clang::SourceLocation call_loc);
+
+    bool shouldSkipLocation(clang::SourceManager& sm, clang::SourceLocation loc) const;
+
     Storage& storage_;
+    std::string project_root_;
     std::unordered_set<std::string> seen_edges_;
     size_t collected_count_ = 0;
+    size_t skipped_count_ = 0;
 };
 
 }  // namespace codesage

@@ -4,9 +4,14 @@
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclBase.h>
+#include <clang/AST/Expr.h>
+#include <clang/AST/ExprCXX.h>
 #include <clang/Basic/SourceManager.h>
 #include <clang/Index/USRGeneration.h>
 #include <llvm/ADT/SmallString.h>
+
+#include <deque>
+#include <set>
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -76,7 +81,18 @@ void FunctionDefCallback::run(const MatchFinder::MatchResult& result) {
 
     SourceLocation loc = fd->getLocation();
     if (!loc.isValid()) return;
-    if (sm.isInSystemHeader(loc)) return;
+
+    if (sm.isInSystemHeader(loc)) {
+        auto ploc = sm.getPresumedLoc(loc);
+        if (ploc.isValid()) {
+            std::string filename = ploc.getFilename();
+            if (filename.find(project_root_) != 0) {
+                return;
+            }
+        } else {
+            return;
+        }
+    }
 
     if (!fd->isThisDeclarationADefinition()) return;
 
@@ -110,9 +126,25 @@ void FunctionDefCallback::run(const MatchFinder::MatchResult& result) {
 
 // ============== CallExprCallback ==============
 
-CallExprCallback::CallExprCallback(Storage& storage)
-    : storage_(storage) {
-    CS_DEBUG("CallExprCallback initialized");
+CallExprCallback::CallExprCallback(Storage& storage, const std::string& project_root)
+    : storage_(storage), project_root_(project_root) {
+    CS_DEBUG("CallExprCallback initialized, project_root={}", project_root);
+}
+
+bool CallExprCallback::shouldSkipLocation(SourceManager& sm, SourceLocation loc) const {
+    if (!loc.isValid()) return true;
+    if (!sm.isInSystemHeader(loc)) return false;
+
+    if (!project_root_.empty()) {
+        auto ploc = sm.getPresumedLoc(loc);
+        if (ploc.isValid()) {
+            std::string filename = ploc.getFilename();
+            if (filename.find(project_root_) == 0) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 std::string CallExprCallback::getUSR(const Decl* decl) {
@@ -124,30 +156,64 @@ std::string CallExprCallback::getUSR(const Decl* decl) {
 }
 
 void CallExprCallback::run(const MatchFinder::MatchResult& result) {
-    const auto* call = result.Nodes.getNodeAs<CallExpr>("call");
-    const auto* callee_decl = result.Nodes.getNodeAs<FunctionDecl>("callee");
-    if (!call || !callee_decl) return;
-
     auto& sm = *result.SourceManager;
-
-    SourceLocation call_loc = call->getBeginLoc();
-    if (!call_loc.isValid()) return;
-    if (sm.isInSystemHeader(call_loc)) return;
-
-    // Find the enclosing function (caller)
     auto& ctx = *result.Context;
-    auto parent_list = ctx.getParents(*call);
-    const FunctionDecl* caller_decl = nullptr;
 
-    // Walk up AST parents to find enclosing FunctionDecl
-    std::vector<clang::DynTypedNode> worklist;
+    const FunctionDecl* callee_decl = nullptr;
+    SourceLocation call_loc;
+
+    if (const auto* call = result.Nodes.getNodeAs<CallExpr>("call")) {
+        callee_decl = call->getDirectCallee();
+        call_loc = call->getBeginLoc();
+
+        if (!callee_decl) {
+            CS_DEBUG("Skipped call: no direct callee (function pointer or unresolved)");
+            skipped_count_++;
+            return;
+        }
+
+        if (!findCallerAndStore(ctx, sm, *call, callee_decl, call_loc)) return;
+
+    } else if (const auto* ctor = result.Nodes.getNodeAs<CXXConstructExpr>("construct")) {
+        callee_decl = ctor->getConstructor();
+        call_loc = ctor->getBeginLoc();
+
+        if (!callee_decl) return;
+        if (!findCallerAndStore(ctx, sm, *ctor, callee_decl, call_loc)) return;
+    }
+}
+
+template <typename ExprT>
+bool CallExprCallback::findCallerAndStore(ASTContext& ctx, SourceManager& sm,
+                                          const ExprT& expr,
+                                          const FunctionDecl* callee_decl,
+                                          SourceLocation call_loc) {
+    if (!call_loc.isValid()) return false;
+
+    if (shouldSkipLocation(sm, call_loc)) {
+        auto ploc = sm.getPresumedLoc(call_loc);
+        if (ploc.isValid()) {
+            CS_DEBUG("Skipped call in system header: {}:{}", ploc.getFilename(), ploc.getLine());
+        }
+        return false;
+    }
+
+    // BFS walk up AST parents to find enclosing FunctionDecl, with visited check
+    const FunctionDecl* caller_decl = nullptr;
+    std::deque<clang::DynTypedNode> worklist;
+    std::set<const void*> visited;
+
+    auto parent_list = ctx.getParents(expr);
     for (const auto& p : parent_list) {
         worklist.push_back(p);
     }
 
     while (!worklist.empty() && !caller_decl) {
-        auto node = worklist.back();
-        worklist.pop_back();
+        auto node = worklist.front();
+        worklist.pop_front();
+
+        const void* node_ptr = node.getMemoizationData();
+        if (node_ptr && !visited.insert(node_ptr).second) continue;
 
         caller_decl = node.get<FunctionDecl>();
         if (!caller_decl) {
@@ -158,19 +224,30 @@ void CallExprCallback::run(const MatchFinder::MatchResult& result) {
         }
     }
 
-    if (!caller_decl) return;
+    if (!caller_decl) {
+        CS_DEBUG("Skipped call: no enclosing function found");
+        skipped_count_++;
+        return false;
+    }
 
-    // Skip if caller is in system header
     auto caller_loc = caller_decl->getLocation();
-    if (caller_loc.isValid() && sm.isInSystemHeader(caller_loc)) return;
+    if (shouldSkipLocation(sm, caller_loc)) {
+        CS_DEBUG("Skipped call: caller {} in system header", caller_decl->getNameAsString());
+        skipped_count_++;
+        return false;
+    }
 
     std::string caller_usr = getUSR(caller_decl);
     std::string callee_usr = getUSR(callee_decl);
-    if (caller_usr.empty() || callee_usr.empty()) return;
+    if (caller_usr.empty() || callee_usr.empty()) {
+        CS_DEBUG("Skipped call: empty USR (caller={}, callee={})",
+                 caller_decl->getNameAsString(), callee_decl->getNameAsString());
+        skipped_count_++;
+        return false;
+    }
 
-    // Deduplicate
     std::string edge_key = caller_usr + "->" + callee_usr;
-    if (seen_edges_.count(edge_key)) return;
+    if (seen_edges_.count(edge_key)) return false;
     seen_edges_.insert(edge_key);
 
     auto ploc = sm.getPresumedLoc(call_loc);
@@ -188,8 +265,9 @@ void CallExprCallback::run(const MatchFinder::MatchResult& result) {
     collected_count_++;
 
     if (collected_count_ % 5000 == 0) {
-        CS_INFO("Collected {} call edges", collected_count_);
+        CS_INFO("Collected {} call edges ({} skipped)", collected_count_, skipped_count_);
     }
+    return true;
 }
 
 }  // namespace codesage

@@ -267,15 +267,14 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
     AnalyzerStats stats;
 
     FunctionDefCallback func_cb(storage_, config_.project_root, config_.core_modules);
-    CallExprCallback call_cb(storage_);
+    CallExprCallback call_cb(storage_, config_.project_root);
     GlobalVarDeclCallback var_cb(storage_, config_.project_root, config_.core_modules);
     VarRefCallback ref_cb(storage_);
 
     MatchFinder finder;
     finder.addMatcher(functionDecl(isDefinition()).bind("func"), &func_cb);
-    finder.addMatcher(
-        callExpr(callee(functionDecl().bind("callee"))).bind("call"),
-        &call_cb);
+    finder.addMatcher(callExpr().bind("call"), &call_cb);
+    finder.addMatcher(cxxConstructExpr().bind("construct"), &call_cb);
     finder.addMatcher(varDecl(hasGlobalStorage()).bind("globalVar"), &var_cb);
     finder.addMatcher(
         declRefExpr(to(varDecl(hasGlobalStorage()).bind("refVar"))).bind("varRef"),
@@ -307,6 +306,9 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
     stats.edges_collected = call_cb.getCollectedCount();
     stats.variables_collected = var_cb.getCollectedCount();
     stats.accesses_collected = ref_cb.getCollectedCount();
+
+    CS_INFO("Call edge collection: {} stored, {} skipped",
+            call_cb.getCollectedCount(), call_cb.getSkippedCount());
 
     return stats;
 }
