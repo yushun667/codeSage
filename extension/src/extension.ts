@@ -21,13 +21,6 @@ export async function activate(context: vscode.ExtensionContext) {
   const config = getConfig();
   backendManager = new BackendManager(config);
 
-  backendManager.start().then(() => {
-    logger.info('Backend service started on activation');
-  }).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`Backend auto-start failed (will retry on demand): ${msg}`);
-  });
-
   vscode.window.registerTreeDataProvider('codesage.searchResults', searchResultsProvider);
 
   // --- Status bar: parse button ---

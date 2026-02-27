@@ -70,10 +70,10 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: 'core' as any,
     style: {
-      'selection-box-color': 'transparent',
+      'selection-box-color': 'rgba(0, 122, 204, 0.08)',
       'selection-box-border-color': '#007acc',
-      'selection-box-border-width': 1,
-      'selection-box-opacity': 0,
+      'selection-box-border-width': 3,
+      'selection-box-opacity': 1,
       'active-bg-opacity': 0,
     } as any,
   },
@@ -106,6 +106,10 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: 'node:selected',
     style: { 'border-color': '#007acc', 'border-width': 3, 'background-color': '#1a3050' },
+  },
+  {
+    selector: 'node.box-preview',
+    style: { 'border-color': '#007acc', 'border-width': 2.5, 'background-color': '#1a2e45' } as any,
   },
   {
     selector: 'node:active',
@@ -212,26 +216,57 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
 
       const container = containerRef.current;
 
+      let isBoxSelecting = false;
+      let boxStartOffsetX = 0;
+      let boxStartOffsetY = 0;
+
       const onMouseDown = (e: MouseEvent) => {
         if (e.button === 2) {
           isPanning = true;
           panMoved = false;
           lastPanX = e.clientX;
           lastPanY = e.clientY;
+        } else if (e.button === 0) {
+          boxStartOffsetX = e.offsetX;
+          boxStartOffsetY = e.offsetY;
         }
       };
       const onMouseMove = (e: MouseEvent) => {
-        if (!isPanning) return;
-        const dx = e.clientX - lastPanX;
-        const dy = e.clientY - lastPanY;
-        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) panMoved = true;
-        cy.panBy({ x: dx, y: dy });
-        lastPanX = e.clientX;
-        lastPanY = e.clientY;
+        if (isPanning) {
+          const dx = e.clientX - lastPanX;
+          const dy = e.clientY - lastPanY;
+          if (Math.abs(dx) > 2 || Math.abs(dy) > 2) panMoved = true;
+          cy.panBy({ x: dx, y: dy });
+          lastPanX = e.clientX;
+          lastPanY = e.clientY;
+          return;
+        }
+        if (isBoxSelecting) {
+          const x1 = Math.min(boxStartOffsetX, e.offsetX);
+          const y1 = Math.min(boxStartOffsetY, e.offsetY);
+          const x2 = Math.max(boxStartOffsetX, e.offsetX);
+          const y2 = Math.max(boxStartOffsetY, e.offsetY);
+          cy.nodes().forEach(n => {
+            const rp = n.renderedPosition();
+            const inside = rp.x >= x1 && rp.x <= x2 && rp.y >= y1 && rp.y <= y2;
+            if (inside && !n.hasClass('box-preview')) n.addClass('box-preview');
+            else if (!inside && n.hasClass('box-preview')) n.removeClass('box-preview');
+          });
+        }
       };
       const onMouseUp = (e: MouseEvent) => {
         if (e.button === 2) isPanning = false;
+        if (isBoxSelecting) {
+          isBoxSelecting = false;
+          cy.nodes().removeClass('box-preview');
+        }
       };
+
+      cy.on('boxstart', () => { isBoxSelecting = true; });
+      cy.on('boxend', () => {
+        isBoxSelecting = false;
+        cy.nodes().removeClass('box-preview');
+      });
 
       /* ── Mouse wheel zoom (manual, VS Code webview intercepts native wheel) ── */
       const onWheel = (e: WheelEvent) => {

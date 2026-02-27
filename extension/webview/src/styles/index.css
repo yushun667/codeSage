@@ -195,25 +195,6 @@ body {
   color: #fff;
 }
 
-/* ── Selection box overlay ── */
-.selection-box {
-  position: absolute;
-  pointer-events: none;
-  z-index: 50;
-  border-width: 1px;
-  border-style: dashed;
-}
-
-.selection-box.ltr {
-  border-color: rgba(0, 122, 204, 0.8);
-  background: rgba(0, 122, 204, 0.08);
-}
-
-.selection-box.rtl {
-  border-color: rgba(78, 186, 111, 0.8);
-  background: rgba(78, 186, 111, 0.08);
-}
-
 /* ── Context menu ── */
 .context-menu {
   position: fixed;
