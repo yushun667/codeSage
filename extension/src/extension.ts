@@ -118,32 +118,41 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const client = await getClient();
+      const cursorFile = editor.document.uri.fsPath;
+      const cursorLine = selection.active.line + 1;
+
       try {
         const results = await client.searchFunctions(word);
         if (results.length === 0) {
-          vscode.window.showInformationMessage(`未找到函数 "${word}"（请确认已完成解析）`);
+          vscode.window.showInformationMessage(`未找到匹配 "${word}" 的函数`);
           return;
         }
 
-        let target = results[0];
-        if (results.length > 1) {
-          const items = results.map(f => ({
-            label: f.name,
-            description: `${f.module} — ${f.file}:${f.line}`,
-            detail: f.signature || f.usr,
-            func: f,
-          }));
-          const picked = await vscode.window.showQuickPick(items, {
-            placeHolder: `找到 ${results.length} 个匹配，选择目标函数`,
-          });
-          if (!picked) return;
-          target = picked.func;
+        // Auto-match: same file + closest to cursor line
+        const sameFile = results.filter(f => cursorFile.endsWith(f.file) || f.file.endsWith(path.basename(cursorFile)));
+        let matched: FunctionInfo | undefined;
+
+        if (sameFile.length === 1) {
+          matched = sameFile[0];
+        } else if (sameFile.length > 1) {
+          matched = sameFile.reduce((best, f) =>
+            Math.abs(f.line - cursorLine) < Math.abs(best.line - cursorLine) ? f : best
+          );
+        } else if (results.length === 1) {
+          matched = results[0];
         }
 
-        showFunctionInGraph(target);
+        if (matched) {
+          logger.info('Auto-matched function', { name: matched.name, file: matched.file, line: matched.line });
+          showFunctionInGraph(matched);
+        } else {
+          // Multiple matches in other files, fall back to QuickPick
+          searchFunction(client, showFunctionInGraph, word);
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         vscode.window.showErrorMessage(`搜索失败: ${msg}`);
+        logger.error('searchFunctionAtCursor failed', msg);
       }
     }),
 
