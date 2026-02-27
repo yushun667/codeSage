@@ -93,7 +93,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('codeSage.searchFunction', async () => {
       const client = await getClient();
-      searchFunction(client, searchResultsProvider);
+      searchFunction(client, showFunctionInGraph);
     }),
 
     vscode.commands.registerCommand('codeSage.searchFunctionAtCursor', async () => {
@@ -118,12 +118,38 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       const client = await getClient();
-      searchFunction(client, searchResultsProvider, word);
+      try {
+        const results = await client.searchFunctions(word);
+        if (results.length === 0) {
+          vscode.window.showInformationMessage(`未找到函数 "${word}"（请确认已完成解析）`);
+          return;
+        }
+
+        let target = results[0];
+        if (results.length > 1) {
+          const items = results.map(f => ({
+            label: f.name,
+            description: `${f.module} — ${f.file}:${f.line}`,
+            detail: f.signature || f.usr,
+            func: f,
+          }));
+          const picked = await vscode.window.showQuickPick(items, {
+            placeHolder: `找到 ${results.length} 个匹配，选择目标函数`,
+          });
+          if (!picked) return;
+          target = picked.func;
+        }
+
+        showFunctionInGraph(target);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`搜索失败: ${msg}`);
+      }
     }),
 
     vscode.commands.registerCommand('codeSage.searchVariable', async () => {
       const client = await getClient();
-      searchVariable(client, searchResultsProvider);
+      searchVariable(client, showVariableInGraph);
     }),
 
     vscode.commands.registerCommand('codeSage.openGraph', async () => {

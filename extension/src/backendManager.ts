@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
-import { ChildProcess, spawn, execSync } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import * as path from 'path';
-import * as fs from 'fs';
 import { logger } from './logger';
 import { ApiClient } from './apiClient';
 import { CodeSageConfig } from './config';
@@ -10,8 +9,6 @@ export class BackendManager {
   private process: ChildProcess | null = null;
   private client: ApiClient | null = null;
   private config: CodeSageConfig;
-  private processExited = false;
-  private processError = '';
 
   constructor(config: CodeSageConfig) {
     this.config = config;
@@ -21,45 +18,15 @@ export class BackendManager {
   async start(): Promise<ApiClient> {
     logger.info('Starting backend service...');
 
-    // If we already have a healthy client, reuse it
     if (this.client) {
       const healthy = await this.client.healthCheck();
       if (healthy) {
         logger.info('Backend already running');
         return this.client;
       }
-      logger.info('Previous backend not healthy, restarting...');
-    }
-
-    // If we don't own the process, check if someone else is listening
-    if (!this.process) {
-      const tempClient = new ApiClient(this.config.backendPort);
-      const alreadyUp = await tempClient.healthCheck();
-      if (alreadyUp) {
-        logger.info('Backend already running on port (external)');
-        this.client = tempClient;
-        return this.client;
-      }
-    }
-
-    // Kill any zombie process on our port
-    this.killPortProcess(this.config.backendPort);
-
-    // Stop old process if any
-    if (this.process) {
-      this.process.kill('SIGTERM');
-      this.process = null;
     }
 
     const backendDir = path.resolve(__dirname, '../../backend');
-    const entryFile = path.join(backendDir, 'dist', 'index.js');
-
-    if (!fs.existsSync(entryFile)) {
-      throw new Error(`后端入口文件不存在: ${entryFile}`);
-    }
-
-    logger.info(`Backend dir: ${backendDir}, entry: ${entryFile}`);
-
     const env = {
       ...process.env,
       CODESAGE_PORT: String(this.config.backendPort),
@@ -72,10 +39,7 @@ export class BackendManager {
       CODESAGE_PARSE_JOBS: String(this.config.parseJobs),
     };
 
-    this.processExited = false;
-    this.processError = '';
-
-    this.process = spawn('node', [entryFile], {
+    this.process = spawn('node', [path.join(backendDir, 'dist', 'index.js')], {
       cwd: backendDir,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -86,35 +50,25 @@ export class BackendManager {
     });
 
     this.process.stderr?.on('data', (data: Buffer) => {
-      const msg = data.toString().trim();
-      logger.debug(`[backend stderr] ${msg}`);
-      this.processError = msg;
+      logger.debug(`[backend stderr] ${data.toString().trim()}`);
     });
 
     this.process.on('exit', (code) => {
       logger.info(`Backend process exited with code ${code}`);
-      this.processExited = true;
       this.process = null;
     });
 
     this.process.on('error', (err) => {
-      logger.error(`Backend process spawn error: ${err.message}`);
-      this.processExited = true;
-      this.processError = err.message;
+      logger.error(`Backend process error: ${err.message}`);
       this.process = null;
     });
 
     this.client = new ApiClient(this.config.backendPort);
 
-    const maxRetries = 30;
+    // Wait for backend to be ready
+    const maxRetries = 20;
     for (let i = 0; i < maxRetries; i++) {
       await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Early exit if the process already crashed
-      if (this.processExited) {
-        throw new Error(`后端进程已退出: ${this.processError || '未知错误'}`);
-      }
-
       const healthy = await this.client.healthCheck();
       if (healthy) {
         logger.info('Backend service is ready');
@@ -122,24 +76,7 @@ export class BackendManager {
       }
     }
 
-    throw new Error('后端服务启动超时（15秒），请检查日志');
-  }
-
-  private killPortProcess(port: number): void {
-    try {
-      const result = execSync(`lsof -ti :${port} 2>/dev/null`).toString().trim();
-      if (result) {
-        const pids = result.split('\n');
-        for (const pid of pids) {
-          logger.info(`Killing zombie process ${pid} on port ${port}`);
-          try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* ignore */ }
-        }
-        // Brief wait for port release
-        execSync('sleep 0.5');
-      }
-    } catch {
-      // No process on port — normal
-    }
+    throw new Error('Backend service failed to start within timeout');
   }
 
   async stop(): Promise<void> {
