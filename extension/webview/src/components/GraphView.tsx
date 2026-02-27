@@ -68,12 +68,12 @@ const MAX_UNDO = 50;
 /* ── Cytoscape stylesheet ── */
 const CY_STYLE: cytoscape.StylesheetStyle[] = [
   {
-    selector: 'core',
+    selector: 'core' as any,
     style: {
-      'selection-box-color': 'rgba(0, 122, 204, 0.12)',
-      'selection-box-border-color': 'rgba(0, 122, 204, 0.45)',
+      'selection-box-color': 'transparent',
+      'selection-box-border-color': '#007acc',
       'selection-box-border-width': 1,
-      'selection-box-opacity': 1,
+      'selection-box-opacity': 0,
       'active-bg-opacity': 0,
     } as any,
   },
@@ -196,11 +196,10 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         layout: { name: 'preset' },
         boxSelectionEnabled: true,
         selectionType: 'additive',
-        userZoomingEnabled: true,
+        userZoomingEnabled: false,
         userPanningEnabled: false,
         minZoom: 0.1,
         maxZoom: 5,
-        wheelSensitivity: 0.3,
       });
 
       cyRef.current = cy;
@@ -234,9 +233,22 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         if (e.button === 2) isPanning = false;
       };
 
+      /* ── Mouse wheel zoom (manual, VS Code webview intercepts native wheel) ── */
+      const onWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(0.1, Math.min(5, cy.zoom() * factor));
+        cy.zoom({
+          level: newZoom,
+          renderedPosition: { x: e.offsetX, y: e.offsetY },
+        });
+      };
+
       container.addEventListener('mousedown', onMouseDown);
       container.addEventListener('mousemove', onMouseMove);
       container.addEventListener('mouseup', onMouseUp);
+      container.addEventListener('wheel', onWheel, { passive: false });
       container.addEventListener('contextmenu', (e) => e.preventDefault());
 
       /* ── Cytoscape events ── */
@@ -288,6 +300,7 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(
         container.removeEventListener('mousedown', onMouseDown);
         container.removeEventListener('mousemove', onMouseMove);
         container.removeEventListener('mouseup', onMouseUp);
+        container.removeEventListener('wheel', onWheel);
         cy.destroy();
         cyRef.current = null;
       };
