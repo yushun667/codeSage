@@ -104,7 +104,7 @@ function drawRectLabel(
   data: PartialButFor<NodeDisplayData, 'x' | 'y' | 'size' | 'label' | 'color'>,
   settings: Settings,
 ): void {
-  if (!data.label) return;
+  if (!data.label || data.highlighted) return;
 
   const scale = Math.max(data.size / 10, 0.6);
   const fontSize = Math.max(Math.round(13 * scale), 8);
@@ -345,8 +345,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
       return hitTestNodeRect(sigma, graph, measureCtx, container.getBoundingClientRect(), cx, cy);
     }
 
-    sigma.on('clickStage', ({ event }) => {
-      const node = hitNode(event.original);
+    const handleClick = (original: MouseEvent | TouchEvent) => {
+      const node = hitNode(original);
       if (node) {
         selectedNodeRef.current = node;
         onNodeClick(nodeDataFromAttrs(node, graph));
@@ -355,11 +355,10 @@ export const GraphView: React.FC<GraphViewProps> = ({
         setContextMenu(prev => ({ ...prev, visible: false }));
       }
       sigma.refresh();
-    });
+    };
 
-    sigma.on('doubleClickStage', ({ event }) => {
-      event.preventSigmaDefault();
-      const node = hitNode(event.original);
+    const handleDoubleClick = (original: MouseEvent | TouchEvent) => {
+      const node = hitNode(original);
       if (node) {
         const attrs = graph.getNodeAttributes(node);
         if (attrs.file && attrs.line) {
@@ -368,15 +367,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
           onNodeDoubleClick(node);
         }
       }
-    });
+    };
 
-    sigma.on('rightClickStage', ({ event }) => {
-      const node = hitNode(event.original);
+    const handleRightClick = (original: MouseEvent | TouchEvent) => {
+      const node = hitNode(original);
       if (node) {
-        event.original.preventDefault();
-        event.preventSigmaDefault();
+        original.preventDefault();
         const nd = nodeDataFromAttrs(node, graph);
-        const me = event.original as MouseEvent;
+        const me = original as MouseEvent;
         setContextMenu({
           visible: true,
           x: me.clientX,
@@ -387,6 +385,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
       } else {
         setContextMenu(prev => ({ ...prev, visible: false }));
       }
+    };
+
+    sigma.on('clickStage', ({ event }) => handleClick(event.original));
+    sigma.on('clickNode', ({ event }) => handleClick(event.original));
+
+    sigma.on('doubleClickStage', ({ event }) => {
+      event.preventSigmaDefault();
+      handleDoubleClick(event.original);
+    });
+    sigma.on('doubleClickNode', ({ event }) => {
+      event.preventSigmaDefault();
+      handleDoubleClick(event.original);
+    });
+
+    sigma.on('rightClickStage', ({ event }) => {
+      event.preventSigmaDefault();
+      handleRightClick(event.original);
+    });
+    sigma.on('rightClickNode', ({ event }) => {
+      event.preventSigmaDefault();
+      handleRightClick(event.original);
     });
 
     const handleMouseMove = (e: MouseEvent) => {
