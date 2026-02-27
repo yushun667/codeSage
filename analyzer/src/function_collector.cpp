@@ -164,16 +164,17 @@ void CallExprCallback::run(const MatchFinder::MatchResult& result) {
     SourceLocation call_loc;
 
     if (const auto* call = result.Nodes.getNodeAs<CallExpr>("call")) {
-        callee_decl = result.Nodes.getNodeAs<FunctionDecl>("callee");
-        call_loc = call->getBeginLoc();
+        callee_decl = call->getDirectCallee();
         if (!callee_decl) return;
+        call_loc = call->getBeginLoc();
         findCallerAndStore(ctx, sm, *call, callee_decl, call_loc);
 
-    } else if (const auto* ctor = result.Nodes.getNodeAs<CXXConstructExpr>("construct")) {
+    } else if (const auto* ctor =
+                   result.Nodes.getNodeAs<CXXConstructExpr>("construct")) {
         if (ctor->getParenOrBraceRange().isInvalid()) return;
         callee_decl = ctor->getConstructor();
-        call_loc = ctor->getBeginLoc();
         if (!callee_decl) return;
+        call_loc = ctor->getBeginLoc();
         findCallerAndStore(ctx, sm, *ctor, callee_decl, call_loc);
     }
 }

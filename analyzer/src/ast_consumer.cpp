@@ -287,9 +287,7 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
 
     MatchFinder finder;
     finder.addMatcher(functionDecl(isDefinition()).bind("func"), &func_cb);
-    finder.addMatcher(
-        callExpr(callee(functionDecl().bind("callee"))).bind("call"),
-        &call_cb);
+    finder.addMatcher(callExpr().bind("call"), &call_cb);
     finder.addMatcher(cxxConstructExpr().bind("construct"), &call_cb);
     finder.addMatcher(varDecl(hasGlobalStorage()).bind("globalVar"), &var_cb);
     finder.addMatcher(
