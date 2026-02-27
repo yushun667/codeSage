@@ -351,8 +351,8 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
 
     AnalyzerStats stats;
 
-    FunctionDefCallback func_cb(storage_, config_.project_root, config_.core_modules);
     CallExprCallback call_cb(storage_, config_.project_root);
+    FunctionDefCallback func_cb(storage_, config_.project_root, config_.core_modules, &call_cb);
     GlobalVarDeclCallback var_cb(storage_, config_.project_root, config_.core_modules);
     VarRefCallback ref_cb(storage_);
 
@@ -404,8 +404,9 @@ AnalyzerStats SourceAnalyzer::parseBatchWithProgress(
     stats.accesses_collected = ref_cb.getCollectedCount();
 
     size_t stubs = guardFS->getStubCount();
-    CS_INFO("Call edge collection: {} stored, {} skipped; stub headers served: {}",
-            call_cb.getCollectedCount(), call_cb.getSkippedCount(), stubs);
+    CS_INFO("Call edge collection: {} stored, {} skipped, {} recovered from body traversal; stub headers served: {}",
+            call_cb.getCollectedCount(), call_cb.getSkippedCount(),
+            call_cb.getRecoveredCount(), stubs);
 
     return stats;
 }
