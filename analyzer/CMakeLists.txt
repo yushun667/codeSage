@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # LLVM pre-built binaries are compiled without RTTI
 if(MSVC)
-    string(APPEND CMAKE_CXX_FLAGS " /GR- /EHsc")
+    string(APPEND CMAKE_CXX_FLAGS " /GR- /EHsc /utf-8")
     add_definitions(-D_CRT_SECURE_NO_WARNINGS -DNOMINMAX)
 else()
     string(APPEND CMAKE_CXX_FLAGS " -fno-rtti")
