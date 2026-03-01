@@ -37,9 +37,15 @@ jobs:
       - name: Cache third_party
         uses: actions/cache@v4
         with:
-          path: third_party
-          key: deps-${{ matrix.target }}-${{ hashFiles('third_party/scripts/*') }}
-          restore-keys: deps-${{ matrix.target }}-
+          path: |
+            third_party/llvm
+            third_party/rocksdb
+            third_party/protobuf
+            third_party/spdlog
+            third_party/nlohmann
+            third_party/googletest
+          key: deps-v2-${{ matrix.target }}-${{ hashFiles('third_party/scripts/*') }}
+          restore-keys: deps-v2-${{ matrix.target }}-
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'

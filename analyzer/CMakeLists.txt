@@ -129,6 +129,12 @@ target_compile_definitions(code-sage PRIVATE
     CLANG_CXX_INCLUDE_DIR="${CLANG_CXX_INCLUDE_DIR}"
 )
 
+# Abseil headers (bundled with protobuf v25+)
+set(ABSL_INCLUDE "${PROTOBUF_ROOT}/third_party/abseil-cpp")
+if(NOT EXISTS "${ABSL_INCLUDE}/absl")
+    set(ABSL_INCLUDE "")
+endif()
+
 target_include_directories(code-sage PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${GENERATED_DIR}
@@ -138,6 +144,7 @@ target_include_directories(code-sage PRIVATE
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
     ${PROTOBUF_SYS_INCLUDE}
+    ${ABSL_INCLUDE}
 )
 
 # Find protobuf libraries: first in third_party, then system
@@ -294,6 +301,7 @@ if(BUILD_TESTS)
             ${LLVM_INCLUDE_DIRS}
             ${CLANG_INCLUDE_DIRS}
             ${PROTOBUF_SYS_INCLUDE}
+            ${ABSL_INCLUDE}
         )
 
         find_library(GTEST_LIB gtest PATHS "${GTEST_LIB_DIR}" NO_DEFAULT_PATH)
