@@ -54,6 +54,21 @@ jobs:
       - name: Setup dependencies
         run: ${{ matrix.setup }}
 
+      - name: Fix DIA SDK path for LLVM (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # LLVM pre-built has hardcoded VS 2019 DIA SDK path; create junction to VS 2022
+          $targetDir = "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional"
+          if (-not (Test-Path $targetDir)) {
+            $vs2022 = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+            if ($vs2022 -and (Test-Path "$vs2022\DIA SDK")) {
+              New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+              New-Item -ItemType Junction -Path "$targetDir\DIA SDK" -Target "$vs2022\DIA SDK" | Out-Null
+              Write-Host "Created DIA SDK junction: $targetDir\DIA SDK -> $vs2022\DIA SDK"
+            }
+          }
+
       - name: Debug dependency layout
         shell: bash
         run: |
