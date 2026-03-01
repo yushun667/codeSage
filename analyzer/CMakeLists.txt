@@ -268,6 +268,17 @@ else()
 endif()
 
 if(WIN32)
+    # LLVM pre-built binaries reference DIA SDK from their build environment;
+    # add the current VS installation's DIA SDK path
+    if(DEFINED ENV{VSINSTALLDIR})
+        link_directories("$ENV{VSINSTALLDIR}/DIA SDK/lib/amd64")
+    else()
+        file(GLOB _VS_DIRS "C:/Program Files/Microsoft Visual Studio/2022/*/DIA SDK/lib/amd64")
+        if(_VS_DIRS)
+            list(GET _VS_DIRS 0 _DIA_DIR)
+            link_directories("${_DIA_DIR}")
+        endif()
+    endif()
     target_link_libraries(code-sage PRIVATE
         Shlwapi Rpcrt4 Version Ws2_32 Userenv Bcrypt Advapi32 Ole32 Shell32 Ntdll)
 elseif(APPLE)
