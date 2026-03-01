@@ -246,11 +246,26 @@ target_link_libraries(code-sage PRIVATE
     ${CLANG_LIBS}
     ${LLVM_LIBS}
     ${ROCKSDB_LIB}
-    ${PROTOBUF_LIBRARY}
-    ${UTF8_RANGE_LIB}
-    ${UTF8_VALIDITY_LIB}
-    ${ABSL_LIBS}
 )
+
+# Protobuf + absl have circular dependencies; use linker group on Linux
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(code-sage PRIVATE
+        -Wl,--start-group
+        ${PROTOBUF_LIBRARY}
+        ${UTF8_RANGE_LIB}
+        ${UTF8_VALIDITY_LIB}
+        ${ABSL_LIBS}
+        -Wl,--end-group
+    )
+else()
+    target_link_libraries(code-sage PRIVATE
+        ${PROTOBUF_LIBRARY}
+        ${UTF8_RANGE_LIB}
+        ${UTF8_VALIDITY_LIB}
+        ${ABSL_LIBS}
+    )
+endif()
 
 if(WIN32)
     target_link_libraries(code-sage PRIVATE
@@ -316,11 +331,16 @@ if(BUILD_TESTS)
             ${CLANG_LIBS}
             ${LLVM_LIBS}
             ${ROCKSDB_LIB}
-            ${PROTOBUF_LIBRARY}
-            ${UTF8_RANGE_LIB}
-            ${UTF8_VALIDITY_LIB}
-            ${ABSL_LIBS}
         )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_link_libraries(${TEST_NAME} PRIVATE
+                -Wl,--start-group
+                ${PROTOBUF_LIBRARY} ${UTF8_RANGE_LIB} ${UTF8_VALIDITY_LIB} ${ABSL_LIBS}
+                -Wl,--end-group)
+        else()
+            target_link_libraries(${TEST_NAME} PRIVATE
+                ${PROTOBUF_LIBRARY} ${UTF8_RANGE_LIB} ${UTF8_VALIDITY_LIB} ${ABSL_LIBS})
+        endif()
         if(WIN32)
             target_link_libraries(${TEST_NAME} PRIVATE
                 Shlwapi Rpcrt4 Version Ws2_32 Userenv Bcrypt Advapi32 Ole32 Shell32 Ntdll)
