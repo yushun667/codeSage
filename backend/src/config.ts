@@ -1,4 +1,6 @@
 import path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
 import logger from './logger';
 
 export interface BackendConfig {
@@ -13,7 +15,17 @@ export interface BackendConfig {
   parseJobs: number;
 }
 
-const DEFAULT_ANALYZER_PATH = path.resolve(__dirname, '../../analyzer/build/code-sage');
+const BIN_NAME = os.platform() === 'win32' ? 'code-sage.exe' : 'code-sage';
+
+function resolveDefaultAnalyzerPath(): string {
+  // Packaged: bin/ next to backend/dist/
+  const bundled = path.resolve(__dirname, '../../bin', BIN_NAME);
+  if (fs.existsSync(bundled)) return bundled;
+  // Development
+  return path.resolve(__dirname, '../../analyzer/build', BIN_NAME);
+}
+
+const DEFAULT_ANALYZER_PATH = resolveDefaultAnalyzerPath();
 
 export function loadConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
   const config: BackendConfig = {

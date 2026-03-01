@@ -1,6 +1,7 @@
 import { execFile, spawn, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { EventEmitter } from 'events';
+import * as os from 'os';
 import logger from '../logger';
 import { BackendConfig } from '../config';
 
@@ -184,7 +185,11 @@ export class AnalyzerService extends EventEmitter {
   cancelParse(): boolean {
     if (this.parseProcess) {
       logger.info('Cancelling parse');
-      this.parseProcess.kill('SIGTERM');
+      if (os.platform() === 'win32') {
+        spawn('taskkill', ['/pid', String(this.parseProcess.pid), '/f', '/t']);
+      } else {
+        this.parseProcess.kill('SIGTERM');
+      }
       this.parseProcess = null;
       this.emit('progress', {
         status: 'error',

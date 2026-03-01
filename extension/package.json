@@ -129,10 +129,15 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile && cd webview && npm run build",
+    "vscode:prepublish": "npm run compile && cd webview && npm run build && npm run build:backend",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "build:backend": "cd ../backend && npm install && npm run build && cd ../extension && node scripts/bundle-backend.js",
     "package": "vsce package",
+    "package:win32-x64": "vsce package --target win32-x64",
+    "package:darwin-arm64": "vsce package --target darwin-arm64",
+    "package:darwin-x64": "vsce package --target darwin-x64",
+    "package:linux-x64": "vsce package --target linux-x64",
     "test": "node --experimental-vm-modules node_modules/vitest/vitest.mjs run"
   },
   "devDependencies": {

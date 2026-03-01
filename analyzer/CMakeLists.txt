@@ -6,7 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # LLVM pre-built binaries are compiled without RTTI
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+if(MSVC)
+    string(APPEND CMAKE_CXX_FLAGS " /GR- /EHsc")
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS -DNOMINMAX)
+else()
+    string(APPEND CMAKE_CXX_FLAGS " -fno-rtti")
+endif()
 
 set(THIRD_PARTY_DIR "${CMAKE_SOURCE_DIR}/../third_party")
 set(PROTO_DIR "${CMAKE_SOURCE_DIR}/../proto")
@@ -27,10 +32,17 @@ add_definitions(${LLVM_DEFINITIONS})
 # ---------- RocksDB ----------
 set(ROCKSDB_ROOT "${THIRD_PARTY_DIR}/rocksdb")
 set(ROCKSDB_INCLUDE "${ROCKSDB_ROOT}/include")
-set(ROCKSDB_LIB "${ROCKSDB_ROOT}/build/librocksdb.a")
+if(WIN32)
+    # MSVC builds: try Release then Debug
+    find_library(ROCKSDB_LIB rocksdb
+        PATHS "${ROCKSDB_ROOT}/build/Release" "${ROCKSDB_ROOT}/build/Debug" "${ROCKSDB_ROOT}/build"
+        NO_DEFAULT_PATH)
+else()
+    set(ROCKSDB_LIB "${ROCKSDB_ROOT}/build/librocksdb.a")
+endif()
 
-if(NOT EXISTS "${ROCKSDB_LIB}")
-    message(FATAL_ERROR "RocksDB not found at ${ROCKSDB_LIB}. Run third_party/scripts/setup_deps.sh first.")
+if(NOT ROCKSDB_LIB OR NOT EXISTS "${ROCKSDB_LIB}")
+    message(FATAL_ERROR "RocksDB not found. Run the setup script first.")
 endif()
 
 # ---------- Protobuf ----------
@@ -51,9 +63,19 @@ endif()
 
 message(STATUS "Using protoc: ${PROTOC_EXECUTABLE}")
 
-# Detect system protobuf include path (homebrew)
-if(EXISTS "/opt/homebrew/include/google/protobuf/message.h")
-    set(PROTOBUF_SYS_INCLUDE "/opt/homebrew/include")
+# Detect system protobuf include path
+if(APPLE)
+    if(EXISTS "/opt/homebrew/include/google/protobuf/message.h")
+        set(PROTOBUF_SYS_INCLUDE "/opt/homebrew/include")
+    elseif(EXISTS "/usr/local/include/google/protobuf/message.h")
+        set(PROTOBUF_SYS_INCLUDE "/usr/local/include")
+    endif()
+elseif(WIN32)
+    if(EXISTS "${PROTOBUF_BUILD}/include/google/protobuf/message.h")
+        set(PROTOBUF_SYS_INCLUDE "${PROTOBUF_BUILD}/include")
+    endif()
+endif()
+if(PROTOBUF_SYS_INCLUDE)
     message(STATUS "Found system protobuf headers at ${PROTOBUF_SYS_INCLUDE}")
 endif()
 
@@ -119,12 +141,16 @@ target_include_directories(code-sage PRIVATE
 
 # Find protobuf libraries: first in third_party, then system
 find_library(PROTOBUF_LIBRARY protobuf
-    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}"
+    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "${PROTOBUF_BUILD}/Release"
     NO_DEFAULT_PATH)
 
 if(NOT PROTOBUF_LIBRARY)
-    find_library(PROTOBUF_LIBRARY protobuf
-        PATHS "/opt/homebrew/lib" "/usr/local/lib" "/usr/lib")
+    if(APPLE)
+        find_library(PROTOBUF_LIBRARY protobuf
+            PATHS "/opt/homebrew/lib" "/usr/local/lib" "/usr/lib")
+    else()
+        find_library(PROTOBUF_LIBRARY protobuf)
+    endif()
 endif()
 
 if(NOT PROTOBUF_LIBRARY)
@@ -134,16 +160,28 @@ endif()
 message(STATUS "Using protobuf library: ${PROTOBUF_LIBRARY}")
 
 # Find absl libraries needed by protobuf v25+
-file(GLOB ABSL_LIBS
-    "${PROTOBUF_BUILD}/lib/libabsl_*.a"
-    "${PROTOBUF_BUILD}/third_party/abseil-cpp/absl/*/libabsl_*.a"
-    "/opt/homebrew/lib/libabsl_*.dylib"
-)
+if(WIN32)
+    file(GLOB ABSL_LIBS
+        "${PROTOBUF_BUILD}/lib/abseil-cpp/absl/*/absl_*.lib"
+        "${PROTOBUF_BUILD}/Release/absl_*.lib"
+        "${PROTOBUF_BUILD}/lib/absl_*.lib"
+    )
+else()
+    file(GLOB ABSL_LIBS
+        "${PROTOBUF_BUILD}/lib/libabsl_*.a"
+        "${PROTOBUF_BUILD}/third_party/abseil-cpp/absl/*/libabsl_*.a"
+    )
+    if(APPLE)
+        file(GLOB ABSL_DYLIBS "/opt/homebrew/lib/libabsl_*.dylib")
+        list(APPEND ABSL_LIBS ${ABSL_DYLIBS})
+    endif()
+endif()
+
 find_library(UTF8_RANGE_LIB utf8_range
-    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "/opt/homebrew/lib"
+    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "${PROTOBUF_BUILD}/Release"
     NO_DEFAULT_PATH)
 find_library(UTF8_VALIDITY_LIB utf8_validity
-    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "/opt/homebrew/lib"
+    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "${PROTOBUF_BUILD}/Release"
     NO_DEFAULT_PATH)
 if(NOT UTF8_RANGE_LIB)
     find_library(UTF8_RANGE_LIB utf8_range)
@@ -187,18 +225,22 @@ target_link_libraries(code-sage PRIVATE
     ${UTF8_RANGE_LIB}
     ${UTF8_VALIDITY_LIB}
     ${ABSL_LIBS}
-    pthread
-    z
 )
 
-if(APPLE)
+if(WIN32)
+    target_link_libraries(code-sage PRIVATE
+        Shlwapi Rpcrt4 Version Ws2_32 Userenv Bcrypt Advapi32 Ole32 Shell32 Ntdll)
+elseif(APPLE)
     find_library(COREFOUNDATION_LIB CoreFoundation)
     find_library(SECURITY_LIB Security)
     target_link_libraries(code-sage PRIVATE
+        pthread z
         ${COREFOUNDATION_LIB}
         ${SECURITY_LIB}
         "-framework IOKit"
     )
+else()
+    target_link_libraries(code-sage PRIVATE pthread z)
 endif()
 
 # ---------- Tests ----------
@@ -252,15 +294,19 @@ if(BUILD_TESTS)
             ${UTF8_RANGE_LIB}
             ${UTF8_VALIDITY_LIB}
             ${ABSL_LIBS}
-            pthread
-            z
         )
-        if(APPLE)
+        if(WIN32)
             target_link_libraries(${TEST_NAME} PRIVATE
+                Shlwapi Rpcrt4 Version Ws2_32 Userenv Bcrypt Advapi32 Ole32 Shell32 Ntdll)
+        elseif(APPLE)
+            target_link_libraries(${TEST_NAME} PRIVATE
+                pthread z
                 ${COREFOUNDATION_LIB}
                 ${SECURITY_LIB}
                 "-framework IOKit"
             )
+        else()
+            target_link_libraries(${TEST_NAME} PRIVATE pthread z)
         endif()
         add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     endfunction()

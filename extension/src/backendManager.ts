@@ -26,7 +26,11 @@ export class BackendManager {
       }
     }
 
-    const backendDir = path.resolve(__dirname, '../../backend');
+    // Packaged VSIX: backend/ sits next to dist/ inside the extension directory
+    let backendDir = path.resolve(__dirname, '../backend');
+    if (!require('fs').existsSync(path.join(backendDir, 'dist', 'index.js'))) {
+      backendDir = path.resolve(__dirname, '../../backend');
+    }
     const env = {
       ...process.env,
       CODESAGE_PORT: String(this.config.backendPort),
@@ -82,7 +86,11 @@ export class BackendManager {
   async stop(): Promise<void> {
     logger.info('Stopping backend service...');
     if (this.process) {
-      this.process.kill('SIGTERM');
+      if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', String(this.process.pid), '/f', '/t']);
+      } else {
+        this.process.kill('SIGTERM');
+      }
       this.process = null;
     }
     this.client = null;

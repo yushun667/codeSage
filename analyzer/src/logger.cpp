@@ -21,6 +21,9 @@ void Logger::init(const std::string& log_dir, spdlog::level::level_enum level) {
     std::string dir = log_dir;
     if (dir.empty()) {
         const char* home = std::getenv("HOME");
+#ifdef _WIN32
+        if (!home) home = std::getenv("USERPROFILE");
+#endif
         if (home) {
             dir = std::string(home) + "/.codesage/logs";
         }

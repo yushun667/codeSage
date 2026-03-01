@@ -2,9 +2,24 @@
 src/**
 webview/src/**
 webview/node_modules/**
+webview/package.json
+webview/tsconfig.json
+webview/tsconfig.node.json
+webview/vite.config.ts
+webview/index.html
 node_modules/**
 test/**
 **/*.ts
+!**/*.d.ts
 **/*.map
 .gitignore
 tsconfig.json
+
+# backend source excluded, only dist + production node_modules included
+backend/src/**
+backend/test/**
+backend/tsconfig.json
+backend/.gitignore
+backend/**/*.ts
+!backend/**/*.d.ts
+backend/**/*.map

@@ -15,10 +15,17 @@ export interface CodeSageConfig {
   parseJobs: number;
 }
 
+const ANALYZER_BIN = process.platform === 'win32' ? 'code-sage.exe' : 'code-sage';
+
 function resolveDefaultAnalyzerPath(): string {
-  // __dirname is extension/dist/ at runtime, analyzer is at ../../analyzer/build/code-sage
-  const relative = path.resolve(__dirname, '../../analyzer/build/code-sage');
-  if (fs.existsSync(relative)) return relative;
+  // Packaged VSIX: bin/ sits next to dist/ inside the extension directory
+  const bundled = path.resolve(__dirname, '../bin', ANALYZER_BIN);
+  if (fs.existsSync(bundled)) return bundled;
+
+  // Development mode: analyzer build output
+  const devPath = path.resolve(__dirname, '../../analyzer/build', ANALYZER_BIN);
+  if (fs.existsSync(devPath)) return devPath;
+
   return '';
 }
 
