@@ -170,21 +170,23 @@ message(STATUS "Using protobuf library: ${PROTOBUF_LIBRARY}")
 
 # Find absl libraries needed by protobuf v25+
 if(WIN32)
-    file(GLOB ABSL_LIBS
-        "${PROTOBUF_BUILD}/lib/abseil-cpp/absl/*/absl_*.lib"
-        "${PROTOBUF_BUILD}/Release/absl_*.lib"
+    file(GLOB_RECURSE ABSL_LIBS
         "${PROTOBUF_BUILD}/lib/absl_*.lib"
+        "${PROTOBUF_BUILD}/Release/absl_*.lib"
+        "${PROTOBUF_BUILD}/third_party/abseil-cpp/absl_*.lib"
     )
 else()
-    file(GLOB ABSL_LIBS
+    file(GLOB_RECURSE ABSL_LIBS
         "${PROTOBUF_BUILD}/lib/libabsl_*.a"
-        "${PROTOBUF_BUILD}/third_party/abseil-cpp/absl/*/libabsl_*.a"
+        "${PROTOBUF_BUILD}/third_party/abseil-cpp/*/libabsl_*.a"
     )
     if(APPLE)
         file(GLOB ABSL_DYLIBS "/opt/homebrew/lib/libabsl_*.dylib")
         list(APPEND ABSL_LIBS ${ABSL_DYLIBS})
     endif()
 endif()
+list(LENGTH ABSL_LIBS ABSL_COUNT)
+message(STATUS "Found ${ABSL_COUNT} absl libraries")
 
 find_library(UTF8_RANGE_LIB utf8_range
     PATHS "${PROTOBUF_BUILD}/lib"
