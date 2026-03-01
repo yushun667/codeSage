@@ -193,12 +193,14 @@ find_library(UTF8_RANGE_LIB utf8_range
           "${PROTOBUF_BUILD}"
           "${PROTOBUF_BUILD}/Release"
           "${PROTOBUF_BUILD}/third_party/utf8_range"
+          "${PROTOBUF_BUILD}/third_party/utf8_range/Release"
     NO_DEFAULT_PATH)
 find_library(UTF8_VALIDITY_LIB utf8_validity
     PATHS "${PROTOBUF_BUILD}/lib"
           "${PROTOBUF_BUILD}"
           "${PROTOBUF_BUILD}/Release"
           "${PROTOBUF_BUILD}/third_party/utf8_range"
+          "${PROTOBUF_BUILD}/third_party/utf8_range/Release"
     NO_DEFAULT_PATH)
 if(NOT UTF8_RANGE_LIB)
     find_library(UTF8_RANGE_LIB utf8_range)
