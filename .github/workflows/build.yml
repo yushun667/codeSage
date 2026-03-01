@@ -44,8 +44,8 @@ jobs:
             third_party/spdlog
             third_party/nlohmann
             third_party/googletest
-          key: deps-v2-${{ matrix.target }}-${{ hashFiles('third_party/scripts/*') }}
-          restore-keys: deps-v2-${{ matrix.target }}-
+          key: deps-v3-${{ matrix.target }}-${{ hashFiles('third_party/scripts/*') }}
+          restore-keys: deps-v3-${{ matrix.target }}-
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'

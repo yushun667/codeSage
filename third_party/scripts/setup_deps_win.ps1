@@ -83,6 +83,7 @@ function Setup-RocksDB {
     cmake .. `
         -G "Visual Studio 17 2022" -A x64 `
         -DCMAKE_BUILD_TYPE=Release `
+        -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
         -DWITH_TESTS=OFF `
         -DWITH_BENCHMARK_TOOLS=OFF `
         -DWITH_TOOLS=OFF `
@@ -114,8 +115,10 @@ function Setup-Protobuf {
     cmake .. `
         -G "Visual Studio 17 2022" -A x64 `
         -DCMAKE_BUILD_TYPE=Release `
+        -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
         -Dprotobuf_BUILD_TESTS=OFF `
         -Dprotobuf_BUILD_EXAMPLES=OFF `
+        -Dprotobuf_MSVC_STATIC_RUNTIME=OFF `
         -DABSL_PROPAGATE_CXX_STD=ON `
         -DCMAKE_CXX_STANDARD=17
     cmake --build . --config Release -j $Jobs
@@ -169,7 +172,9 @@ function Setup-GoogleTest {
     Set-Location "$gtestDir"
     New-Item -ItemType Directory -Force -Path build | Out-Null
     Set-Location build
-    cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+    cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release `
+        -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+        -Dgtest_force_shared_crt=ON
     cmake --build . --config Release -j $Jobs
     Log "GoogleTest built successfully"
 }
