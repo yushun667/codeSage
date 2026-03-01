@@ -15,7 +15,7 @@ function Err  { param([string]$Msg) Write-Error "[setup_deps] ERROR: $Msg"; exit
 # ────────── LLVM ──────────
 function Setup-LLVM {
     $llvmDir = "$ThirdParty\llvm"
-    if (Test-Path "$llvmDir\bin\clang.exe") {
+    if (Test-Path "$llvmDir\lib\cmake\llvm\LLVMConfig.cmake") {
         Log "LLVM already installed, skipping"
         return
     }
@@ -31,20 +31,48 @@ function Setup-LLVM {
         if ($LASTEXITCODE -ne 0) { Err "Failed to download LLVM" }
     }
 
-    Log "Extracting LLVM (NSIS installer in silent mode)..."
-    # The LLVM NSIS installer supports /S for silent and /D= for directory
-    Start-Process -FilePath ".\$archive" -ArgumentList "/S", "/D=$llvmDir" -Wait -NoNewWindow
-    if (-not (Test-Path "$llvmDir\bin\clang.exe")) {
-        # Fallback: try 7z extraction
-        Log "NSIS extraction may have failed, trying 7z..."
-        if (Get-Command 7z -ErrorAction SilentlyContinue) {
-            New-Item -ItemType Directory -Force -Path $llvmDir | Out-Null
-            7z x $archive -o"$llvmDir" -y
-        } else {
-            Err "LLVM extraction failed. Install 7-Zip or run the LLVM installer manually to $llvmDir"
-        }
+    # Extract NSIS installer with 7z (more reliable than running installer in CI)
+    Log "Extracting LLVM with 7z..."
+    if (Test-Path $llvmDir) { Remove-Item $llvmDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $llvmDir | Out-Null
+
+    # 7z extracts NSIS to a $INSTDIR subfolder or flat; handle both
+    $tmpDir = "$ThirdParty\llvm_extract"
+    if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
+    7z x $archive -o"$tmpDir" -y | Out-Null
+    if ($LASTEXITCODE -ne 0) { Err "7z extraction failed" }
+
+    # NSIS extractors create `$INSTDIR` or `$_OUTDIR` subfolder
+    $inner = Get-ChildItem $tmpDir -Directory | Select-Object -First 1
+    if ($inner -and (Test-Path "$($inner.FullName)\bin\clang.exe")) {
+        Log "Moving extracted LLVM from subfolder $($inner.Name)..."
+        Get-ChildItem $inner.FullName | Move-Item -Destination $llvmDir -Force
+    } elseif (Test-Path "$tmpDir\bin\clang.exe") {
+        Get-ChildItem $tmpDir | Move-Item -Destination $llvmDir -Force
+    } else {
+        # Last resort: try NSIS silent install
+        Log "7z extraction did not yield expected layout, trying NSIS silent install..."
+        Remove-Item $llvmDir -Recurse -Force -ErrorAction SilentlyContinue
+        Start-Process -FilePath "$ThirdParty\$archive" -ArgumentList "/S","/D=$llvmDir" -Wait -NoNewWindow
     }
-    Remove-Item $archive -Force -ErrorAction SilentlyContinue
+
+    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "$ThirdParty\$archive" -Force -ErrorAction SilentlyContinue
+
+    if (-not (Test-Path "$llvmDir\bin\clang.exe")) {
+        Err "LLVM extraction failed: clang.exe not found in $llvmDir\bin"
+    }
+
+    # Verify cmake configs exist
+    if (Test-Path "$llvmDir\lib\cmake\llvm\LLVMConfig.cmake") {
+        Log "LLVM cmake configs found"
+    } else {
+        Log "WARNING: LLVMConfig.cmake not found at expected location"
+        # List actual structure for debugging
+        Log "Contents of lib/cmake:"
+        Get-ChildItem "$llvmDir\lib\cmake" -ErrorAction SilentlyContinue | ForEach-Object { Log "  $_" }
+    }
+
     Log "LLVM installed to $llvmDir"
 }
 

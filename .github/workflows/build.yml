@@ -15,10 +15,6 @@ jobs:
             target: darwin-arm64
             bin: code-sage
             setup: bash third_party/scripts/setup_deps.sh
-          - os: macos-13
-            target: darwin-x64
-            bin: code-sage
-            setup: bash third_party/scripts/setup_deps.sh
           - os: ubuntu-22.04
             target: linux-x64
             bin: code-sage
@@ -51,6 +47,17 @@ jobs:
 
       - name: Setup dependencies
         run: ${{ matrix.setup }}
+
+      - name: Debug dependency layout
+        shell: bash
+        run: |
+          echo "=== LLVM ==="
+          ls third_party/llvm/lib/cmake/llvm/ 2>/dev/null | head -5 || echo "No cmake/llvm dir"
+          ls third_party/llvm/lib/cmake/clang/ 2>/dev/null | head -5 || echo "No cmake/clang dir"
+          echo "=== Protobuf utf8 ==="
+          find third_party/protobuf/build -name "*utf8*" -type f 2>/dev/null || echo "No utf8 libs found"
+          echo "=== RocksDB ==="
+          find third_party/rocksdb/build -name "*.a" -o -name "*.lib" 2>/dev/null | head -5
 
       - name: Build analyzer
         shell: bash

@@ -178,16 +178,30 @@ else()
 endif()
 
 find_library(UTF8_RANGE_LIB utf8_range
-    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "${PROTOBUF_BUILD}/Release"
+    PATHS "${PROTOBUF_BUILD}/lib"
+          "${PROTOBUF_BUILD}"
+          "${PROTOBUF_BUILD}/Release"
+          "${PROTOBUF_BUILD}/third_party/utf8_range"
     NO_DEFAULT_PATH)
 find_library(UTF8_VALIDITY_LIB utf8_validity
-    PATHS "${PROTOBUF_BUILD}/lib" "${PROTOBUF_BUILD}" "${PROTOBUF_BUILD}/Release"
+    PATHS "${PROTOBUF_BUILD}/lib"
+          "${PROTOBUF_BUILD}"
+          "${PROTOBUF_BUILD}/Release"
+          "${PROTOBUF_BUILD}/third_party/utf8_range"
     NO_DEFAULT_PATH)
 if(NOT UTF8_RANGE_LIB)
     find_library(UTF8_RANGE_LIB utf8_range)
 endif()
 if(NOT UTF8_VALIDITY_LIB)
     find_library(UTF8_VALIDITY_LIB utf8_validity)
+endif()
+if(NOT UTF8_RANGE_LIB)
+    message(WARNING "utf8_range not found, skipping")
+    set(UTF8_RANGE_LIB "")
+endif()
+if(NOT UTF8_VALIDITY_LIB)
+    message(WARNING "utf8_validity not found, skipping")
+    set(UTF8_VALIDITY_LIB "")
 endif()
 
 # Clang libraries for LibTooling
