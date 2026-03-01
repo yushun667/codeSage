@@ -21,59 +21,44 @@ function Setup-LLVM {
     }
 
     $ver     = "18.1.8"
-    $archive = "LLVM-$ver-win64.exe"
+    # Use the full development tarball (includes cmake configs + static libs)
+    $archive = "clang+llvm-$ver-x86_64-pc-windows-msvc.tar.xz"
     $url     = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$ver/$archive"
 
-    Log "Downloading LLVM $ver for Windows..."
+    Log "Downloading LLVM $ver development package for Windows..."
     Set-Location $ThirdParty
     if (-not (Test-Path $archive)) {
         curl.exe -L -o $archive $url
         if ($LASTEXITCODE -ne 0) { Err "Failed to download LLVM" }
     }
 
-    # Extract NSIS installer with 7z (more reliable than running installer in CI)
-    Log "Extracting LLVM with 7z..."
+    Log "Extracting LLVM tar.xz..."
     if (Test-Path $llvmDir) { Remove-Item $llvmDir -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $llvmDir | Out-Null
 
-    # 7z extracts NSIS to a $INSTDIR subfolder or flat; handle both
-    $tmpDir = "$ThirdParty\llvm_extract"
-    if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
-    7z x $archive -o"$tmpDir" -y | Out-Null
-    if ($LASTEXITCODE -ne 0) { Err "7z extraction failed" }
+    # tar.xz: first extract .xz, then .tar
+    7z x $archive -o"$ThirdParty" -y | Out-Null
+    if ($LASTEXITCODE -ne 0) { Err "7z xz extraction failed" }
 
-    # NSIS extractors create `$INSTDIR` or `$_OUTDIR` subfolder
-    $inner = Get-ChildItem $tmpDir -Directory | Select-Object -First 1
-    if ($inner -and (Test-Path "$($inner.FullName)\bin\clang.exe")) {
-        Log "Moving extracted LLVM from subfolder $($inner.Name)..."
-        Get-ChildItem $inner.FullName | Move-Item -Destination $llvmDir -Force
-    } elseif (Test-Path "$tmpDir\bin\clang.exe") {
-        Get-ChildItem $tmpDir | Move-Item -Destination $llvmDir -Force
-    } else {
-        # Last resort: try NSIS silent install
-        Log "7z extraction did not yield expected layout, trying NSIS silent install..."
-        Remove-Item $llvmDir -Recurse -Force -ErrorAction SilentlyContinue
-        Start-Process -FilePath "$ThirdParty\$archive" -ArgumentList "/S","/D=$llvmDir" -Wait -NoNewWindow
+    $tarFile = $archive -replace '\.xz$', ''
+    if (Test-Path "$ThirdParty\$tarFile") {
+        7z x "$ThirdParty\$tarFile" -o"$ThirdParty" -y | Out-Null
+        if ($LASTEXITCODE -ne 0) { Err "7z tar extraction failed" }
+        Remove-Item "$ThirdParty\$tarFile" -Force -ErrorAction SilentlyContinue
     }
 
-    Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    # The tarball extracts to clang+llvm-18.1.8-x86_64-pc-windows-msvc/
+    $extractedDir = Get-ChildItem $ThirdParty -Directory -Filter "clang+llvm-*" | Select-Object -First 1
+    if ($extractedDir) {
+        Rename-Item $extractedDir.FullName $llvmDir
+    }
+
     Remove-Item "$ThirdParty\$archive" -Force -ErrorAction SilentlyContinue
 
-    if (-not (Test-Path "$llvmDir\bin\clang.exe")) {
-        Err "LLVM extraction failed: clang.exe not found in $llvmDir\bin"
+    if (-not (Test-Path "$llvmDir\lib\cmake\llvm\LLVMConfig.cmake")) {
+        Err "LLVM development package incomplete: LLVMConfig.cmake not found"
     }
 
-    # Verify cmake configs exist
-    if (Test-Path "$llvmDir\lib\cmake\llvm\LLVMConfig.cmake") {
-        Log "LLVM cmake configs found"
-    } else {
-        Log "WARNING: LLVMConfig.cmake not found at expected location"
-        # List actual structure for debugging
-        Log "Contents of lib/cmake:"
-        Get-ChildItem "$llvmDir\lib\cmake" -ErrorAction SilentlyContinue | ForEach-Object { Log "  $_" }
-    }
-
-    Log "LLVM installed to $llvmDir"
+    Log "LLVM installed to $llvmDir (cmake configs verified)"
 }
 
 # ────────── RocksDB ──────────
