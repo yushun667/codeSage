@@ -100,7 +100,8 @@ add_custom_command(
 set(SPDLOG_INCLUDE "${THIRD_PARTY_DIR}/spdlog/include")
 
 # ---------- nlohmann/json ----------
-set(JSON_INCLUDE "${THIRD_PARTY_DIR}/nlohmann")
+# json.hpp lives at third_party/nlohmann/json.hpp; code includes <nlohmann/json.hpp>
+set(JSON_INCLUDE "${THIRD_PARTY_DIR}")
 
 # ---------- Source files ----------
 set(SOURCES
